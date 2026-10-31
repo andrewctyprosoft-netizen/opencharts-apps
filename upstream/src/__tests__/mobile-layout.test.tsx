@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MobileDrawingBar } from "@/pages/trading/DrawingToolRail";
 import { Sheet } from "@/mobile/Sheet";
+import { useBackButton } from "@/mobile/use-back-button";
 import { SymbolList } from "@/mobile/SymbolList";
 import { useMobileStore } from "@/mobile/mobile-store";
 import { useTradingStore } from "@/services/store";
@@ -74,6 +75,27 @@ describe("phone sheets and the back button", () => {
     expect(screen.getByText("body")).toBeInTheDocument();
     expect(back()).toBe(true);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a sheet above an older handler whose callback changes on every render", () => {
+    const back = installBackButton();
+    const closeBar = vi.fn();
+    const closeSheet = vi.fn();
+    // The drawing bar re-renders on every price tick with a new callback.
+    function Bar({ tick, sheet }: { tick: number; sheet: boolean }) {
+      useBackButton(true, () => closeBar(tick));
+      return (
+        <Sheet open={sheet} title="Tools" onClose={closeSheet}>
+          <p>tools</p>
+        </Sheet>
+      );
+    }
+    const { rerender } = render(<Bar tick={1} sheet={false} />);
+    rerender(<Bar tick={2} sheet />); // the user opens a tool group
+    rerender(<Bar tick={3} sheet />); // a price tick re-renders the bar
+    expect(back()).toBe(true);
+    expect(closeSheet).toHaveBeenCalledTimes(1);
+    expect(closeBar).not.toHaveBeenCalled();
   });
 
   it("does not hold the back button while closed", () => {

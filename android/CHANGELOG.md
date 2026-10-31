@@ -12,7 +12,8 @@ First Android release, with every feature of OpenCharts Desktop 0.6.0.
 - More screen: Portfolio, Market overview and Alerts & positions as full-screen panels; exchange API keys and OANDA token pages laid out for a phone; live prices per exchange or the offline demo; one-click trading, sounds, chart templates, notifications, About.
 - **Android bridge**: the desktop app's main-process modules (exchange signing, OANDA, forex, GeckoTerminal, public web requests) run unchanged in the WebView on a native HTTPS plugin, `node:crypto` on @noble and a Keystore-backed `safeStorage`.
 - API keys and the OANDA token are sealed with AES-256-GCM under an Android Keystore key; app data is excluded from backups and device transfer.
-- Price alerts raise Android notifications on their own channel; tapping one charts the pair.
+- Price alerts raise Android notifications on their own channel, posted at once by the app's plugin (no alarm permission; scheduling through `@capacitor/local-notifications` opened Android's alarm settings and sent the app to the background); tapping one charts the pair, also from a cold start.
+- The Android back button closes the top sheet first even while prices re-render the screen underneath.
 - Android back button: closes sheets and panels, returns to the chart, then leaves.
 - Edge-to-edge with safe-area insets, dark start screen, new adaptive icon (candles and trend line).
-- Tests: 68 unit tests (signing through the Android shim checked against Node's crypto), 7 phone-layout tests (285 upstream tests in total), and an on-device smoke test driving the real APK over the WebView's DevTools socket.
+- Tests: 68 unit tests (signing through the Android shim checked against Node's crypto), 8 phone-layout tests (286 upstream tests in total), and an on-device smoke test driving the real APK over the WebView's DevTools socket.

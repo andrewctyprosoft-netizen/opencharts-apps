@@ -8,10 +8,6 @@
     "allowMixedContent": false
   },
   "plugins": {
-    "LocalNotifications": {
-      "smallIcon": "ic_stat_alert",
-      "iconColor": "#14b8a6"
-    },
     "SystemBars": {
       "insetsHandling": "css",
       "style": "DARK"

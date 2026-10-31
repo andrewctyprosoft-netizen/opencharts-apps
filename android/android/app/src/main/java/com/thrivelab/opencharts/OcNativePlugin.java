@@ -1,18 +1,28 @@
 package com.thrivelab.opencharts;
 
+import android.Manifest;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.Build;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -49,12 +59,17 @@ import javax.net.ssl.HttpsURLConnection;
  *   <li>{@code streamOpen} / {@code streamCancel}: OANDA's chunked price stream, as events;</li>
  *   <li>{@code dataKey}: a 256-bit key wrapped by an Android Keystore key, which seals the API
  *       keys and the OANDA token (the desktop app used Windows DPAPI);</li>
+ *   <li>{@code notify}: price alert notifications, posted at once (a tap charts the pair);
+ *       nothing is scheduled, so the app needs no exact-alarm permission;</li>
  *   <li>{@code openExternal}: links open in the phone's browser.</li>
  * </ul>
  *
  * Only HTTPS hosts the app talks to are reachable.
  */
-@CapacitorPlugin(name = "OcNative")
+@CapacitorPlugin(
+    name = "OcNative",
+    permissions = { @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS }) }
+)
 public class OcNativePlugin extends Plugin {
 
     private static final Set<String> HOSTS = new HashSet<>(
@@ -97,6 +112,8 @@ public class OcNativePlugin extends Plugin {
     private static final String UA = "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 (KHTML, like Gecko) OpenChartsAndroid";
     private static final String KEY_ALIAS = "oc_master";
     private static final String PREFS = "oc_secure";
+    private static final String CHANNEL = "alerts";
+    private static final String EXTRA_SYMBOL = "com.thrivelab.opencharts.SYMBOL";
 
     private final ExecutorService pool = Executors.newCachedThreadPool();
     private final Map<String, HttpURLConnection> streams = new ConcurrentHashMap<>();
@@ -297,6 +314,97 @@ public class OcNativePlugin extends Plugin {
                 call.reject("Android Keystore unavailable: " + e.getMessage());
             }
         });
+    }
+
+    // ── Alert notifications ─────────────────────────────────
+
+    @Override
+    public void load() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel ch = new NotificationChannel(CHANNEL, "Price alerts", NotificationManager.IMPORTANCE_HIGH);
+            ch.setDescription("A price crossed one of your alerts");
+            ch.enableVibration(true);
+            getContext().getSystemService(NotificationManager.class).createNotificationChannel(ch);
+        }
+        handleTap(getActivity().getIntent());
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        handleTap(intent);
+    }
+
+    /** A tapped alert notification opens the app with its symbol; the page charts it. */
+    private void handleTap(Intent intent) {
+        if (intent == null) return;
+        String symbol = intent.getStringExtra(EXTRA_SYMBOL);
+        if (symbol == null) return;
+        intent.removeExtra(EXTRA_SYMBOL);
+        JSObject ev = new JSObject();
+        ev.put("symbol", symbol);
+        notifyListeners("notificationTap", ev, true);
+    }
+
+    private String notificationState() {
+        if (!NotificationManagerCompat.from(getContext()).areNotificationsEnabled()) return "denied";
+        if (Build.VERSION.SDK_INT < 33) return "granted";
+        PermissionState st = getPermissionState("notifications");
+        return st == PermissionState.GRANTED ? "granted" : st == PermissionState.DENIED ? "denied" : "prompt";
+    }
+
+    /** {request: true} asks for the permission (Android 13+) when it has not been answered yet. */
+    @PluginMethod
+    public void notificationPermission(PluginCall call) {
+        String state = notificationState();
+        if ("prompt".equals(state) && call.getBoolean("request", false)) {
+            requestPermissionForAlias("notifications", call, "notificationPermissionResult");
+            return;
+        }
+        JSObject res = new JSObject();
+        res.put("state", state);
+        call.resolve(res);
+    }
+
+    @PermissionCallback
+    private void notificationPermissionResult(PluginCall call) {
+        JSObject res = new JSObject();
+        res.put("state", notificationState());
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void notify(PluginCall call) {
+        if (!"granted".equals(notificationState())) {
+            call.reject("Notifications are not allowed.");
+            return;
+        }
+        int id = call.getInt("id", (int) (System.currentTimeMillis() & 0x7fffffff));
+        String symbol = call.getString("symbol", "");
+        Intent open = new Intent(getContext(), MainActivity.class);
+        open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        if (!symbol.isEmpty()) open.putExtra(EXTRA_SYMBOL, symbol);
+        PendingIntent tap = PendingIntent.getActivity(
+            getContext(),
+            id,
+            open,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+        NotificationCompat.Builder n = new NotificationCompat.Builder(getContext(), CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_alert)
+            .setColor(0xFF14B8A6)
+            .setContentTitle(call.getString("title", "Price alert"))
+            .setContentText(call.getString("body", ""))
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(call.getString("body", "")))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setAutoCancel(true)
+            .setContentIntent(tap);
+        try {
+            NotificationManagerCompat.from(getContext()).notify(id, n.build());
+            call.resolve();
+        } catch (SecurityException e) {
+            call.reject("Notifications are not allowed.");
+        }
     }
 
     // ── Links ───────────────────────────────────────────────

@@ -76,6 +76,7 @@ Real orders are market or limit spot orders; take profit and stop loss go with O
 1. Tap the bell on the chart (or ⋮ › Set alert), check the price, choose **Once** or **Every time**, **Add alert**.
 2. The first time, Android asks to allow notifications: allow.
 3. When the price crosses, a notification appears (tap it to chart the pair), with a beep and a toast.
+   It is posted on the spot, never scheduled, so the app needs no alarm permission and never opens Android's settings.
 
 Alerts are checked while OpenCharts is open, including in the background until Android pauses the app.
 A crossing while it was closed fires at the next start.
@@ -95,8 +96,8 @@ A crossing while it was closed fires at the next start.
 | `bridge/shims/` | `node:crypto` (HMAC, ES256, Ed25519 on @noble) and `Buffer` for the desktop modules |
 | `bridge/keys.html`, `bridge/oanda-token.html` | The API keys and OANDA token pages, laid out for a phone |
 | `android/` | The Capacitor Android project |
-| `android/app/src/main/java/com/thrivelab/opencharts/OcNativePlugin.java` | Native HTTPS (host allowlist), OANDA price stream, Keystore data key, external links |
-| `capacitor.config.json` | App id `com.thrivelab.opencharts`, dark system bars, notification icon |
+| `android/app/src/main/java/com/thrivelab/opencharts/OcNativePlugin.java` | Native HTTPS (host allowlist), OANDA price stream, Keystore data key, alert notifications, external links |
+| `capacitor.config.json` | App id `com.thrivelab.opencharts`, dark system bars and safe-area insets |
 | `dev/tests/` | Signing through the Android crypto shim, checked against Node's crypto (the other unit tests are in `../desktop/dev/tests/`) |
 | `dev/tools/` | Build scripts (`build-web`, `build-bridge`, `build-apk`), the icon generator, the Vite dev plugin, the on-device smoke test |
 
@@ -129,8 +130,9 @@ Add `&desktop` to the URL for the desktop layout, to compare.
 ### Tests
 
 - `npm test`: the exchange signing tests, including Binance's published signature vector and Coinbase ES256 and Ed25519 JWTs signed by the Android shim and verified with Node's crypto.
-- Inside `../upstream/`: `npx tsc --noEmit`, `npx eslint src/ --max-warnings=0` and `npx vitest run` (285 tests, 7 of them for the phone layout).
-- `node dev/tools/smoke-android.mjs --boot`: boots an emulator (or uses a connected phone), installs the debug APK and drives the real app over the WebView's DevTools socket: every exchange listing, prices moving, the Keystore round trip, sheets and the back button, the drawing tools, the order gate and a paper trade, an alert reaching the notification shade, a DEX pool, gold, the three dashboards, the keys page and an OKX request signed on the phone. Screenshots go to `dev/out/android/`.
+- Inside `../upstream/`: `npx tsc --noEmit`, `npx eslint src/ --max-warnings=0` and `npx vitest run` (286 tests, 8 of them for the phone layout, including the back-button order).
+- `node dev/tools/smoke-android.mjs --boot`: boots an emulator (or uses a connected phone), installs the debug APK and drives the real app over the WebView's DevTools socket: every exchange listing, prices moving, the Keystore round trip, sheets and the back button, the drawing tools, the order gate and a paper trade, an alert reaching the notification shade, a DEX pool, gold, the three dashboards, the keys page and an OKX request signed on the phone. Screenshots go to `dev/out/android/`. It also checks that an alert keeps the app in front and that two back presses in a row do not leave it.
+- `node dev/tools/cdp-eval.mjs "<expression>"` evaluates JavaScript in the running debug app, for debugging on a device.
 
 ## Patches
 
@@ -152,7 +154,7 @@ The terminal in `../upstream/` carries the desktop app's patches (`OpenCharts De
 | `src/pages/trading/ChartContextMenu.tsx` | `data-chart-menu` for finger-sized rows |
 | `src/desktop/MarketsPage.tsx` | Scrolling tabs; filters and condition fold behind **Filters & sort** |
 | `src/desktop/OrderGate.tsx`, `DeskPage.tsx`, `DesktopSync.tsx`, `AlertsPanel.tsx` | Phone wording (More ›, this phone, ⋮ menu) |
-| `src/__tests__/mobile-layout.test.tsx` (new) | Symbol list, sheets and back button, drawing bar, Buy/Sell |
+| `src/__tests__/mobile-layout.test.tsx` (new) | Symbol list, sheets and back button (order kept across re-renders), drawing bar, Buy/Sell |
 
 Every mobile change is inactive in the desktop app (it checks for `window.ocMobile`).
 The terminal, adapters and `../desktop/electron/` modules are shared, so a desktop change reaches the Android app on its next build; run `npm test` and the smoke test after one.

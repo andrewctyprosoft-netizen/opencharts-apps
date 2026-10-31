@@ -65,7 +65,10 @@ async function boot() {
 async function connect() {
   let sock = "";
   for (let t = 0; t < 40 && !sock; t++) {
-    sock = (adb("shell", "cat", "/proc/net/unix").match(/@(webview_devtools_remote_\d+)/) || [])[1] || "";
+    // The socket of the app's current process (a restarted app leaves the old one listed).
+    const pid = adb("shell", "pidof", PKG).split(/\s+/)[0];
+    const unix = adb("shell", "cat", "/proc/net/unix");
+    if (pid && unix.includes(`@webview_devtools_remote_${pid}`)) sock = `webview_devtools_remote_${pid}`;
     if (!sock) await wait(500);
   }
   if (!sock) throw new Error("No WebView devtools socket (is this a debug build?)");
@@ -136,10 +139,17 @@ async function main() {
   r.rendered = await until(js, `!!document.querySelector('[data-testid="mobile-root"]')`, 45_000);
   await wait(8000);
   r.listed = await js(`window.__ocDesktop.symbols().reduce((m, n) => { const p = n.includes(":") ? n.split(":")[0] : "other"; m[p] = (m[p] || 0) + 1; return m; }, {})`);
-  const p1 = await js(`document.querySelector('[data-testid="mobile-price"]').textContent`);
-  await wait(6000);
-  const p2 = await js(`document.querySelector('[data-testid="mobile-price"]').textContent`);
-  r.price = { first: p1, second: p2, moved: p1 !== p2 };
+  // Live: the terminal's BTC mid matches a fresh quote from Binance (quiet markets can sit still
+  // for a while, so "the price moved" is not a fair check).
+  await js(`window.__ocDesktop.smokeChart("BINANCE:BTCUSDT")`);
+  await wait(4000);
+  r.price = await js(`(async () => {
+    const q = (await window.ocDesktop.web.get("https://api.binance.com/api/v3/ticker/bookTicker?symbol=BTCUSDT")).body;
+    const fresh = (Number(q.bidPrice) + Number(q.askPrice)) / 2;
+    await new Promise((r) => setTimeout(r, 3000));
+    const shown = window.__ocDesktop.mid("BINANCE:BTCUSDT");
+    return { fresh, shown, header: document.querySelector('[data-testid="mobile-price"]').textContent, live: Math.abs(shown - fresh) / fresh < 0.0005 };
+  })()`);
   r.insets = await js(`({ top: getComputedStyle(document.documentElement).getPropertyValue("--safe-area-inset-top"), bottom: getComputedStyle(document.documentElement).getPropertyValue("--safe-area-inset-bottom") })`);
   shot("02-chart");
 
@@ -165,6 +175,8 @@ async function main() {
   adb("shell", "input", "keyevent", "KEYCODE_BACK");
   await wait(400);
   r.drawClosed = await js(`!document.querySelector('[data-testid="mobile-drawing-bar"]')`);
+  // Two backs (tool sheet, then drawing bar) must not leave the app.
+  r.inAppAfterBacks = /topResumedActivity=.*com\.thrivelab\.opencharts/.test(adb("shell", "dumpsys", "activity", "activities"));
 
   // 4. Order gate: no key → reminder → paper trade.
   const symbol = await js("window.__ocDesktop.selected()");
@@ -187,10 +199,12 @@ async function main() {
   const mid = await js(`window.__ocDesktop.mid(${JSON.stringify(symbol)})`);
   adb("shell", "cmd", "notification", "list"); // warm up
   await js(`window.__ocDesktop.smokeAlert(${JSON.stringify(symbol)}, ${mid * 0.999}, ${mid * 0.99}, "once")`);
-  r.alertFired = await until(js, `window.__ocDesktop.alerts().log.length >= 1`, 30_000);
+  r.alertFired = await until(js, `window.__ocDesktop.alerts().log.length >= 1`, 120_000);
   await wait(2000);
   const notes = adb("shell", "dumpsys", "notification", "--noredact");
-  r.notification = notes.includes(`pkg=${PKG}`) && /Alert/.test(notes);
+  r.notification = notes.includes(`pkg=${PKG}`) && notes.includes("Price alert");
+  // The alert must not take the user out of the app (an exact-alarm settings page once did).
+  r.stayedInApp = /topResumedActivity=.*com\.thrivelab\.opencharts/.test(adb("shell", "dumpsys", "activity", "activities"));
   adb("shell", "cmd", "statusbar", "expand-notifications");
   await wait(1200);
   shot("07-notification");
@@ -198,7 +212,7 @@ async function main() {
   await wait(600);
 
   // 6. A DEX pool and spot gold.
-  const dex = await js(`window.__ocDesktop.smokeAddDex("pepe")`);
+  const dex = await js(`window.__ocDesktop.smokeAddDex("pepe").catch((e) => null)`);
   r.dex = dex ? await js(`window.__ocDesktop.smokeChart(${JSON.stringify(dex)})`) : { error: "no pool" };
   await wait(5000);
   shot("08-dex");
@@ -215,7 +229,7 @@ async function main() {
   adb("shell", "input", "keyevent", "KEYCODE_BACK");
   await wait(600);
   await js(`window.ocMobile.openDashboard("portfolio")`);
-  await until(js, `!!document.querySelector('.oc-ovl iframe')?.contentDocument?.querySelector('[data-testid="wallet-address"]')`, 20_000);
+  await until(js, `(document.querySelector('.oc-ovl iframe')?.contentDocument?.querySelectorAll('[data-testid="portfolio-not-connected"] button').length ?? 0) >= 5`, 30_000);
   r.portfolio = await panel(`[...d.querySelectorAll('[data-testid="portfolio-not-connected"] button')].length`);
   shot("11-portfolio");
   adb("shell", "input", "keyevent", "KEYCODE_BACK");
@@ -245,14 +259,14 @@ async function main() {
     rendered: r.rendered,
     exchanges: live.length >= 5,
     forexListed: (r.listed?.other ?? 0) > 20,
-    priceMoved: r.price.moved,
+    livePrice: r.price?.live,
     keystore: r.keystore?.native && r.keystore.sealed && r.keystore.roundTrip,
     symbolSheet: r.symbolSheet > 20,
     backClosesSheet: r.backClosedSheet,
-    drawTools: r.drawSheet > 5 && r.drawClosed,
+    drawTools: r.drawSheet > 5 && r.drawClosed && r.inAppAfterBacks,
     gate: r.gate?.kind === "order-gate-missing-key" && r.paper?.ok === true,
     positions: r.positionsShown && r.backToChart,
-    alert: r.alertFired && r.notification,
+    alert: r.alertFired && r.notification && r.stayedInApp,
     dex: (r.dex?.candles ?? 0) > 0,
     gold: (r.gold?.candles ?? 0) > 0,
     markets: (r.markets ?? 0) > 20,

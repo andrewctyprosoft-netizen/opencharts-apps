@@ -1,6 +1,6 @@
 // OpenCharts Android bridge: the Android stand-in for the desktop app's Electron main process
-// and preload. It builds the same services (bridge/core, copied unchanged from the desktop app's
-// electron/ folder) on a CORS-free native fetch and Keystore-backed secret storage, and exposes
+// and preload. It builds the same services (the desktop app's ../../desktop/electron/ modules,
+// bundled unchanged) on a CORS-free native fetch and Keystore-backed secret storage, and exposes
 // them as `window.ocDesktop` with the preload's exact shape, so the terminal runs as on desktop.
 // `window.ocMobile` adds what the desktop menus did (data source, exchanges, dashboards, keys)
 // plus Android glue: back button, notifications, external links.
@@ -14,7 +14,7 @@ import { createGecko } from "../../desktop/electron/gecko.js";
 import { createOanda } from "../../desktop/electron/oanda.js";
 import { createTrade } from "../../desktop/electron/trade.js";
 import { createWeb } from "../../desktop/electron/web.js";
-import { App, LocalNotifications, OcNative, isNative } from "./native.js";
+import { App, OcNative, isNative } from "./native.js";
 import { netFetch } from "./net.js";
 import { closeOverlay, closeTopOverlay, openOverlay, overlayCount, overlayOf } from "./overlay.js";
 import { initSecure, safeStorage } from "./secure.js";
@@ -156,10 +156,12 @@ function startBridge() {
       () => reloadTerminal(), // pick up a new or removed token, as the desktop app does
     );
   }
+  let pendingChart = null; // a notification tapped before the terminal was listening
   function openChart(symbol) {
     if (typeof symbol !== "string" || symbol.length > 60) return;
     for (const view of Object.keys(DASHBOARDS)) closeOverlay(view);
-    emit("app:open-chart", symbol);
+    if (!listeners["app:open-chart"].size) pendingChart = symbol;
+    else emit("app:open-chart", symbol);
   }
 
   // ── Notifications ──
@@ -171,10 +173,9 @@ function startBridge() {
       return "Notification" in window && Notification.permission === "granted";
     }
     if (notePermission === "granted") return true;
-    let p = await LocalNotifications.checkPermissions();
-    if (p.display === "prompt" || p.display === "prompt-with-rationale") p = await LocalNotifications.requestPermissions();
-    notePermission = p.display;
-    return p.display === "granted";
+    const { state } = await OcNative.notificationPermission({ request: true });
+    notePermission = state;
+    return state === "granted";
   }
   async function notify(title, body, symbol) {
     const text = (v, n) => String(v ?? "").slice(0, n);
@@ -190,9 +191,9 @@ function startBridge() {
     }
     if (!(await ensureNotifications())) return;
     noteId = (noteId % 2_000_000_000) + 1;
-    await LocalNotifications.schedule({
-      notifications: [{ id: noteId, title: t, body: b, extra: { symbol: s }, channelId: "alerts", smallIcon: "ic_stat_alert" }],
-    });
+    // Posted at once by the app's plugin: nothing is scheduled, so no exact-alarm permission
+    // (scheduling through @capacitor/local-notifications opened Android's alarm settings).
+    await OcNative.notify({ id: noteId, title: t, body: b, symbol: s }).catch(() => {});
   }
 
   // ── The preload API, per window (the terminal, or a panel iframe) ──
@@ -200,6 +201,11 @@ function startBridge() {
     const listen = (channel, handler) => {
       const entry = { handler, win: win === window ? null : win };
       listeners[channel].add(entry);
+      if (channel === "app:open-chart" && pendingChart) {
+        const symbol = pendingChart;
+        pendingChart = null;
+        setTimeout(() => emit("app:open-chart", symbol), 0);
+      }
       return () => listeners[channel].delete(entry);
     };
     const closeMine = (kind) => {
@@ -345,17 +351,6 @@ function startBridge() {
 
   if (isNative) {
     void App.addListener("backButton", () => void onBack());
-    void LocalNotifications.addListener("localNotificationActionPerformed", (e) => {
-      const s = e.notification?.extra?.symbol;
-      if (s) openChart(s);
-    });
-    void LocalNotifications.createChannel({
-      id: "alerts",
-      name: "Price alerts",
-      description: "A price crossed one of your alerts",
-      importance: 5,
-      visibility: 1,
-      vibration: true,
-    }).catch(() => {});
+    void OcNative.addListener("notificationTap", ({ symbol }) => openChart(symbol));
   }
 }

@@ -9,4 +9,3 @@ export const isNative = Capacitor.isNativePlatform();
 export const OcNative = registerPlugin("OcNative");
 
 export { App } from "@capacitor/app";
-export { LocalNotifications } from "@capacitor/local-notifications";

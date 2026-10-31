@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <title>Exchange API keys</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; font: 13px/1.5 "Segoe UI", system-ui, sans-serif; background: #111318; color: #e6e8ec; display: flex; height: 100vh; }
+      nav { width: 150px; background: #0b0d11; border-right: 1px solid #2a2f3a; padding: 12px 0; flex-shrink: 0; }
+      nav button { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 8px 14px; border: 0; background: none; color: #a3a8b3; text-align: left; cursor: pointer; font: inherit; }
+      nav button.active { background: #1b1f27; color: #e6e8ec; }
+      nav .dot { width: 8px; height: 8px; border-radius: 50%; background: #3a404c; }
+      nav .dot.on { background: #34d399; }
+      main { flex: 1; padding: 18px 22px; overflow-y: auto; }
+      h1 { font-size: 16px; margin: 0 0 6px; }
+      p { margin: 0 0 10px; color: #a3a8b3; }
+      ol { margin: 0 0 12px; padding-left: 18px; color: #a3a8b3; }
+      a { color: #2dd4bf; }
+      .warn { background: #2a1f0d; border: 1px solid #5c4313; color: #f5c46b; padding: 8px 10px; border-radius: 6px; margin-bottom: 12px; }
+      label { display: block; margin: 10px 0 4px; font-weight: 600; }
+      label.inline { font-weight: 400; display: flex; gap: 6px; align-items: center; }
+      input[type="password"], input[type="text"], textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 6px; border: 1px solid #2a2f3a; background: #0b0d11; color: inherit; font-family: Consolas, monospace; font-size: 12px; }
+      textarea { height: 90px; resize: vertical; -webkit-text-security: disc; }
+      .actions { display: flex; gap: 8px; margin-top: 16px; }
+      button.btn { padding: 8px 14px; border-radius: 6px; border: 1px solid #2a2f3a; background: #1b1f27; color: inherit; cursor: pointer; font: inherit; }
+      button.primary { background: #14b8a6; border-color: #14b8a6; color: #04130f; font-weight: 600; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      #status { min-height: 20px; margin-top: 12px; white-space: pre-wrap; }
+      .ok { color: #34d399; } .err { color: #f87171; }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <nav id="tabs"></nav>
+    <main>
+      <h1 id="title"></h1>
+      <p id="intro"></p>
+      <ol id="steps"></ol>
+      <div class="warn">Turn on <b>read</b> and <b>spot trading</b> only. Never enable withdrawals. Keys are checked with the exchange, then stored encrypted on this PC (Windows DPAPI) and never shown again.</div>
+      <div id="form">
+        <label for="apiKey" id="apiKeyLabel">API key</label>
+        <input id="apiKey" type="text" autocomplete="off" spellcheck="false" />
+        <label for="secret" id="secretLabel">API secret</label>
+        <input id="secret" type="password" autocomplete="off" spellcheck="false" />
+        <textarea id="secretArea" class="hidden" spellcheck="false" placeholder="-----BEGIN EC PRIVATE KEY-----"></textarea>
+        <div id="passRow">
+          <label for="passphrase">Passphrase</label>
+          <input id="passphrase" type="password" autocomplete="off" spellcheck="false" />
+        </div>
+        <label class="inline" id="testRow"><input id="testnet" type="checkbox" /> <span id="testLabel">Test network key</span></label>
+        <div class="actions">
+          <button id="save" class="btn primary">Check and save</button>
+          <button id="remove" class="btn">Remove key</button>
+          <button id="close" class="btn">Close</button>
+        </div>
+      </div>
+      <div id="oandaForm" class="hidden">
+        <div class="actions">
+          <button id="openOanda" class="btn primary">Open OANDA token window</button>
+          <button id="close2" class="btn">Close</button>
+        </div>
+      </div>
+      <div id="status"></div>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const api = window.ocDesktop.keys;
+      const VENUES = {
+        binance: {
+          label: "Binance", url: "https://www.binance.com/en/my/settings/api-management",
+          steps: ["Open API Management in your Binance account.", "Create an API key (system generated, HMAC).", "Edit restrictions: tick Enable Reading and Enable Spot & Margin Trading."],
+          test: "Spot test network key (testnet.binance.vision)",
+        },
+        okx: {
+          label: "OKX", url: "https://www.okx.com/account/my-api", pass: true,
+          steps: ["Open API in your OKX account.", "Create a V5 API key with Read and Trade permissions and set a passphrase.", "Paste the key, secret and passphrase."],
+          test: "Demo trading key",
+        },
+        bybit: {
+          label: "Bybit", url: "https://www.bybit.com/app/user/api-management",
+          steps: ["Open API Management in your Bybit account.", "Create a system-generated key with Read-Write, and tick Unified Trading › Spot.", "Paste the key and secret."],
+          test: "Testnet key (api-testnet.bybit.com)",
+        },
+        kucoin: {
+          label: "KuCoin", url: "https://www.kucoin.com/account/api", pass: true,
+          steps: ["Open API Management in your KuCoin account.", "Create an API key with General and Spot Trading permissions and set a passphrase.", "Paste the key, secret and passphrase."],
+        },
+        coinbase: {
+          label: "Coinbase", url: "https://portal.cdp.coinbase.com/projects/api-keys", pem: true,
+          steps: ["Open the Coinbase Developer Platform › API keys.", "Create a Secret API key with View and Trade permissions (ECDSA or Ed25519).", "Paste the key name (organizations/…/apiKeys/…) and the private key."],
+        },
+        mexc: {
+          label: "MEXC", url: "https://www.mexc.com/user/openapi",
+          steps: ["Open API Management in your MEXC account.", "Create a key with Spot › View Account Details and Trade.", "Paste the access key and secret key."],
+        },
+        oanda: {
+          label: "OANDA", url: "https://www.oanda.com/", oanda: true,
+          steps: ["Forex and metals (XAUUSD, EURUSD …) trade on OANDA.", "OANDA uses one API token instead of a key and secret.", "The token window checks it with OANDA and stores it encrypted."],
+        },
+      };
+      let current = new URLSearchParams(location.search).get("venue") || "binance";
+      if (!VENUES[current]) current = "binance";
+      let configured = {};
+      const status = (text, cls) => { $("status").textContent = text; $("status").className = cls || ""; };
+
+      function renderTabs() {
+        $("tabs").innerHTML = "";
+        for (const [id, v] of Object.entries(VENUES)) {
+          const b = document.createElement("button");
+          b.className = id === current ? "active" : "";
+          b.dataset.venue = id;
+          b.innerHTML = `<span>${v.label}</span><span class="dot${configured[id] ? " on" : ""}"></span>`;
+          b.onclick = () => { current = id; render(); };
+          $("tabs").appendChild(b);
+        }
+      }
+
+      function render() {
+        const v = VENUES[current];
+        renderTabs();
+        $("title").textContent = `${v.label} API ${v.oanda ? "token" : "key"}`;
+        $("intro").innerHTML = `Orders on ${v.label} pairs go to your ${v.label} account once this is set. Create it at <a href="${v.url}" target="_blank">${new URL(v.url).hostname}</a>.`;
+        $("steps").innerHTML = v.steps.map((s) => `<li>${s}</li>`).join("");
+        $("form").classList.toggle("hidden", Boolean(v.oanda));
+        $("oandaForm").classList.toggle("hidden", !v.oanda);
+        $("passRow").classList.toggle("hidden", !v.pass);
+        $("testRow").classList.toggle("hidden", !v.test);
+        $("testLabel").textContent = v.test || "";
+        $("secret").classList.toggle("hidden", Boolean(v.pem));
+        $("secretArea").classList.toggle("hidden", !v.pem);
+        $("apiKeyLabel").textContent = v.pem ? "API key name" : "API key";
+        $("secretLabel").textContent = v.pem ? "Private key" : "API secret";
+        for (const id of ["apiKey", "secret", "secretArea", "passphrase"]) $(id).value = "";
+        $("testnet").checked = false;
+        status(configured[current] ? `A ${v.label} ${v.oanda ? "token" : "key"} is saved. Enter a new one to replace it.` : "");
+      }
+
+      async function refresh() {
+        configured = await api.status();
+        render();
+      }
+
+      $("save").onclick = async () => {
+        const v = VENUES[current];
+        $("save").disabled = true;
+        status(`Checking with ${v.label}…`);
+        const r = await api.save(current, {
+          apiKey: $("apiKey").value,
+          secret: v.pem ? $("secretArea").value : $("secret").value,
+          passphrase: $("passphrase").value,
+          testnet: $("testnet").checked,
+        });
+        $("save").disabled = false;
+        if (r.ok) {
+          configured[current] = true;
+          renderTabs();
+          for (const id of ["apiKey", "secret", "secretArea", "passphrase"]) $(id).value = "";
+          status(`Saved. ${v.label} answered with ${r.assets} asset${r.assets === 1 ? "" : "s"} on the account. Orders on ${v.label} pairs now go to this account.`, "ok");
+        } else {
+          status(r.error, "err");
+        }
+      };
+      $("remove").onclick = async () => {
+        await api.clear(current);
+        configured[current] = false;
+        renderTabs();
+        status("Key removed. Orders on these pairs go to the paper account again.");
+      };
+      $("openOanda").onclick = () => api.openOanda();
+      $("close").onclick = $("close2").onclick = () => api.close();
+      refresh();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <title>OANDA token</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; padding: 20px 24px; font: 13px/1.5 "Segoe UI", system-ui, sans-serif; background: #111318; color: #e6e8ec; }
+      h1 { font-size: 16px; margin: 0 0 6px; }
+      p { margin: 0 0 12px; color: #a3a8b3; }
+      ol { margin: 0 0 14px; padding-left: 18px; color: #a3a8b3; }
+      a { color: #2dd4bf; }
+      label { display: block; margin: 10px 0 4px; font-weight: 600; }
+      .row { display: flex; gap: 14px; }
+      .row label { font-weight: 400; margin: 0; display: flex; gap: 6px; align-items: center; }
+      input[type="password"] { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 6px; border: 1px solid #2a2f3a; background: #0b0d11; color: inherit; font-family: Consolas, monospace; }
+      .actions { display: flex; gap: 8px; margin-top: 16px; }
+      button { padding: 8px 14px; border-radius: 6px; border: 1px solid #2a2f3a; background: #1b1f27; color: inherit; cursor: pointer; }
+      button.primary { background: #14b8a6; border-color: #14b8a6; color: #04130f; font-weight: 600; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      #status { min-height: 20px; margin-top: 12px; }
+      .ok { color: #34d399; } .err { color: #f87171; }
+    </style>
+  </head>
+  <body>
+    <h1>Forex &amp; gold prices (OANDA)</h1>
+    <p>Spot XAU/USD, XAG/USD and the forex pairs come from OANDA. A free practice (demo) account is enough.</p>
+    <ol>
+      <li>Open a free practice account at <a href="https://www.oanda.com/" data-external>oanda.com</a>.</li>
+      <li>In the account portal open <b>Manage API Access</b> and generate a token.</li>
+      <li>Paste it below. It is checked with OANDA, then stored encrypted on this PC.</li>
+    </ol>
+    <label>Account type</label>
+    <div class="row">
+      <label><input type="radio" name="env" value="practice" checked /> Practice (demo)</label>
+      <label><input type="radio" name="env" value="live" /> Live</label>
+    </div>
+    <label for="token">API token</label>
+    <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="xxxxxxxxxxxxxxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx" />
+    <div class="actions">
+      <button id="save" class="primary">Save and connect</button>
+      <button id="remove">Remove token</button>
+      <button id="close">Close</button>
+    </div>
+    <div id="status"></div>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const status = (text, cls) => { $("status").textContent = text; $("status").className = cls || ""; };
+      const api = window.ocDesktop.settings;
+      const env = new URLSearchParams(location.search).get("env");
+      if (env) document.querySelector(`input[value="${env === "live" ? "live" : "practice"}"]`).checked = true;
+      if (new URLSearchParams(location.search).get("configured") === "1") status("A token is saved. Paste a new one to replace it.");
+
+      $("save").onclick = async () => {
+        $("save").disabled = true;
+        status("Checking with OANDA…");
+        const chosen = document.querySelector('input[name="env"]:checked').value;
+        const r = await api.saveOandaToken($("token").value, chosen);
+        $("save").disabled = false;
+        if (r.ok) {
+          $("token").value = "";
+          status(`Connected to account ${r.accountId}. Forex and metals are now in the symbol list.`, "ok");
+        } else {
+          status(r.error, "err");
+        }
+      };
+      $("remove").onclick = async () => { await api.clearOandaToken(); status("Token removed."); };
+      $("close").onclick = () => api.close();
+      for (const a of document.querySelectorAll("a[data-external]")) a.target = "_blank";
+    </script>
+  </body>
+</html>

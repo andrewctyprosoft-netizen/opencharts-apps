@@ -8,6 +8,7 @@ import {
   useChartPreferences,
 } from "../../hooks/useChartPreferences.ts";
 import type { IndicatorType } from "../../lib/indicators.ts";
+import { isMobileApp } from "../../mobile/is-mobile.ts";
 import { cn } from "../../lib/utils.ts";
 import {
   type ChartTemplate,
@@ -283,7 +284,8 @@ export function ChartTemplatesMenu(props: ChartTemplatesMenuProps) {
   };
 
   return (
-    <div className="relative hidden md:block">
+    // OpenCharts Mobile patch: shown in the phone layout's More tab too.
+    <div className={cn("relative", !isMobileApp() && "hidden md:block")}>
       <button
         onClick={() => setOpen((v) => !v)}
         title="Chart layout templates"

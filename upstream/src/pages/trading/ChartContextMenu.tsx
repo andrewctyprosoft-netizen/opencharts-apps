@@ -178,6 +178,7 @@ export function ChartContextMenu(props: ChartContextMenuProps) {
       />
       <div
         ref={menuRef}
+        data-chart-menu
         style={{ left: pos.x, top: pos.y }}
         className="fixed z-50 min-w-[230px] rounded-lg border border-border bg-card/95 py-1 shadow-2xl backdrop-blur-xl"
       >

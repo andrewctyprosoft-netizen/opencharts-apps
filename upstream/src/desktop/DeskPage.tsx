@@ -9,6 +9,7 @@ import { AlertsPanel } from "./AlertsPanel.tsx";
 import { useAlerts } from "./alerts-store.ts";
 import { fmtNum, fmtPrice, fmtUsd, pctClass } from "./dash-format.ts";
 import { type DeskMessage, type DeskSnapshot, openDeskChannel } from "./desk-channel.ts";
+import { isMobileApp } from "../mobile/is-mobile.ts";
 
 /**
  * OpenCharts Desktop addition: File › Dashboard › Alerts & positions. One
@@ -213,7 +214,7 @@ export function DeskPage({ bridge }: { bridge: DesktopBridge }) {
   return (
     <div className="flex flex-col h-full min-w-0">
       <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-card">
-        <h1 className="text-base font-semibold">Alerts &amp; positions</h1>
+        <h1 className={isMobileApp() ? "hidden" : "text-base font-semibold"}>Alerts &amp; positions</h1>
         <span
           data-testid="desk-terminal"
           className={cn("text-[11px] px-2 py-0.5 rounded", live ? "bg-buy/15 text-buy" : "bg-sell/15 text-sell")}
@@ -243,7 +244,7 @@ export function DeskPage({ bridge }: { bridge: DesktopBridge }) {
           <Stat label="Accounts" value={`Paper ${live && snap!.account ? fmtUsd(snap!.account.equity, 1e9) : "—"} · ${connected}/7 live`} small />
         </div>
 
-        <Section icon={<Bell className="h-4 w-4 text-[#f0b90b]" />} title="Price alerts" note="Fire once or every time the price crosses; a Windows notification, sound and toast while the app runs.">
+        <Section icon={<Bell className="h-4 w-4 text-[#f0b90b]" />} title="Price alerts" note={`Fire once or every time the price crosses; a ${isMobileApp() ? "phone" : "Windows"} notification, sound and toast while the app runs.`}>
           <div className="h-[340px] rounded-lg border border-border bg-card overflow-hidden">
             <AlertsPanel
               defaultSymbol={snap?.selected ?? ""}

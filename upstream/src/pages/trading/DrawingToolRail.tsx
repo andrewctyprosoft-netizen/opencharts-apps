@@ -74,8 +74,11 @@ import {
   Waves,
   Waypoints,
   ZoomIn,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Sheet } from "../../mobile/Sheet.tsx";
 import { useDragOffset } from "../../hooks/useDragOffset.ts";
 import { cn } from "../../lib/utils.ts";
 import type { DrawingLine, DrawingTool, MagnetMode } from "./constants.ts";
@@ -529,3 +532,153 @@ export function DrawingToolRail({
   );
 }
 
+
+// ── OpenCharts Mobile addition: the phone's drawing bar ─────
+// The same groups and tools as the rail, as a row of large buttons under the
+// chart. A group opens its tools in a bottom sheet; the bar also has measure,
+// zoom, magnet, stay in drawing mode, lock, hide, remove all, undo and redo.
+
+const SHORT_LABEL: Record<string, string> = {
+  lines: "Lines",
+  fib: "Fib",
+  patterns: "Patterns",
+  forecast: "Forecast",
+  shapes: "Shapes",
+  text: "Text",
+};
+
+function BarButton({
+  icon: Icon,
+  label,
+  active,
+  onClick,
+  testId,
+}: {
+  icon: LucideIcon;
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+  testId?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      data-testid={testId}
+      className={cn(
+        "flex h-12 min-w-[52px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-[10px]",
+        active ? "bg-primary/15 text-primary" : "text-muted-foreground active:bg-secondary",
+      )}
+    >
+      <Icon className="h-5 w-5" />
+      <span className="max-w-[60px] truncate">{label}</span>
+    </button>
+  );
+}
+
+export interface MobileDrawingBarProps extends DrawingToolRailProps {
+  onUndo?: () => void;
+  onRedo?: () => void;
+  onDone: () => void;
+}
+
+export function MobileDrawingBar({
+  drawingTool,
+  onDrawingTool,
+  magnetMode = "none",
+  onCycleMagnet,
+  stayInDrawingMode = false,
+  onToggleStayInDrawingMode,
+  drawings = [],
+  onUpdateDrawing,
+  onClearDrawings,
+  onUndo,
+  onRedo,
+  onDone,
+}: MobileDrawingBarProps) {
+  const [openGroup, setOpenGroup] = useState<ToolGroup | null>(null);
+  const [lastUsed, setLastUsed] = useState<Record<string, DrawingTool>>({});
+  const allLocked = drawings.length > 0 && drawings.every((d) => d.locked);
+  const allHidden = drawings.length > 0 && drawings.every((d) => d.hidden);
+  const setAll = (patch: Partial<DrawingLine>) => {
+    for (const d of drawings) onUpdateDrawing?.({ ...d, ...patch });
+  };
+  const armed = GROUPS.flatMap(allTools).find((t) => t.tool === drawingTool);
+  const toggle = (t: DrawingTool) => onDrawingTool(drawingTool === t ? "none" : t);
+
+  return (
+    <div className="shrink-0 border-t border-border bg-card" data-testid="mobile-drawing-bar">
+      <div className="flex items-center gap-2 px-3 pt-1.5 text-[12px] text-muted-foreground">
+        <span className="flex-1 truncate">
+          {armed
+            ? `${armed.label}: tap the chart to place each point${armed.tool === "path" || armed.tool === "polyline" || armed.tool === "ghost-feed" ? ", double-tap to finish" : ""}`
+            : drawingTool === "measure"
+              ? "Measure: tap two points"
+              : drawingTool === "zoom"
+                ? "Zoom: drag across a time range"
+                : "Pick a tool. Tap a drawing to select it, double-tap for its settings."}
+        </span>
+        <button type="button" onClick={onDone} className="h-8 px-3 rounded-lg bg-secondary text-foreground font-semibold" data-testid="mobile-draw-done">
+          Done
+        </button>
+      </div>
+      <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar px-1 py-1">
+        <BarButton icon={MousePointer2} label="Cursor" active={drawingTool === "none"} onClick={() => onDrawingTool("none")} />
+        {GROUPS.map((g) => {
+          const tools = allTools(g);
+          const current = tools.find((t) => t.tool === drawingTool) ?? tools.find((t) => t.tool === lastUsed[g.id]) ?? tools[0]!;
+          return (
+            <BarButton
+              key={g.id}
+              icon={current.icon}
+              label={SHORT_LABEL[g.id] ?? g.label}
+              active={tools.some((t) => t.tool === drawingTool)}
+              onClick={() => setOpenGroup(g)}
+              testId={`draw-group-${g.id}`}
+            />
+          );
+        })}
+        <div className="mx-1 h-8 shrink-0 border-l border-border" />
+        <BarButton icon={Ruler} label="Measure" active={drawingTool === "measure"} onClick={() => toggle("measure")} />
+        <BarButton icon={ZoomIn} label="Zoom" active={drawingTool === "zoom"} onClick={() => toggle("zoom")} />
+        <BarButton icon={Undo2} label="Undo" onClick={() => onUndo?.()} />
+        <BarButton icon={Redo2} label="Redo" onClick={() => onRedo?.()} />
+        <div className="mx-1 h-8 shrink-0 border-l border-border" />
+        <BarButton icon={Magnet} label={magnetMode === "none" ? "Magnet" : magnetMode === "weak" ? "Weak" : "Strong"} active={magnetMode !== "none"} onClick={() => onCycleMagnet?.()} />
+        <BarButton icon={PencilLine} label="Stay" active={stayInDrawingMode} onClick={() => onToggleStayInDrawingMode?.()} />
+        <BarButton icon={allLocked ? Lock : LockOpen} label={allLocked ? "Unlock" : "Lock all"} active={allLocked} onClick={() => setAll({ locked: !allLocked })} />
+        <BarButton icon={allHidden ? EyeOff : Eye} label={allHidden ? "Show" : "Hide all"} active={allHidden} onClick={() => setAll({ hidden: !allHidden })} />
+        <BarButton icon={Trash2} label="Remove all" onClick={() => onClearDrawings?.()} />
+      </div>
+      <Sheet open={openGroup !== null} title={openGroup?.label ?? ""} onClose={() => setOpenGroup(null)} testId="sheet-draw-tools">
+        {openGroup?.sections.map((section) => (
+          <div key={section.title} className="pb-1">
+            <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{section.title}</div>
+            <div className="grid grid-cols-2 gap-1 px-2">
+              {section.tools.map((t) => (
+                <button
+                  key={t.tool}
+                  type="button"
+                  onClick={() => {
+                    setLastUsed((m) => ({ ...m, [openGroup.id]: t.tool }));
+                    onDrawingTool(t.tool);
+                    setOpenGroup(null);
+                  }}
+                  className={cn(
+                    "flex items-center gap-2.5 h-12 px-3 rounded-lg text-left text-[14px]",
+                    drawingTool === t.tool ? "bg-primary/15 text-primary" : "active:bg-secondary",
+                  )}
+                >
+                  <t.icon className="h-5 w-5 shrink-0" />
+                  <span className="truncate">{t.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="h-3" />
+      </Sheet>
+    </div>
+  );
+}

@@ -1,0 +1,73 @@
+/* OpenCharts Mobile addition: phone-layout styles. Safe-area insets keep content clear of the
+   status bar and gesture bar on edge-to-edge Android: Capacitor's SystemBars sets
+   --safe-area-inset-* from the insets Android reports; env() covers browsers. */
+
+:root {
+  --oc-safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --oc-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+
+html.oc-mobile,
+html.oc-mobile body {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+html.oc-mobile input,
+html.oc-mobile textarea,
+html.oc-mobile [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 16px stops Android from zooming into focused inputs. */
+html.oc-mobile input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html.oc-mobile select,
+html.oc-mobile textarea {
+  font-size: 16px;
+}
+
+.oc-safe-top {
+  padding-top: var(--oc-safe-top);
+}
+
+.oc-mobile-root {
+  height: 100%;
+}
+
+@keyframes oc-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes oc-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+.oc-fade-in {
+  animation: oc-fade-in 0.18s ease-out;
+}
+.oc-slide-up {
+  animation: oc-slide-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Desktop panels reused on the phone: roomier controls for fingers. */
+.oc-ticket button {
+  min-height: 36px;
+}
+.oc-ticket input {
+  min-height: 40px;
+}
+.oc-alerts button {
+  min-height: 34px;
+}
+
+/* The chart menu (header ⋯ button): finger-sized rows. */
+html.oc-mobile [data-chart-menu] button {
+  min-height: 44px;
+  font-size: 14px;
+}

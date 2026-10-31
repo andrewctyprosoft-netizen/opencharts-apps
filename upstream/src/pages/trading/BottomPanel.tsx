@@ -60,6 +60,8 @@ export interface BottomPanelProps {
   onDeleteJournal: (id: string) => void;
   height?: number;
   isFeedConnected?: boolean;
+  /** OpenCharts Mobile patch: fill the parent (a full phone screen) with labelled, larger tabs. */
+  fill?: boolean;
 }
 
 export function BottomPanel({
@@ -79,6 +81,7 @@ export function BottomPanel({
   onDeleteJournal,
   height = 220,
   isFeedConnected = true,
+  fill = false,
 }: BottomPanelProps) {
   const isDemo = useAuthStore((s) => s.isDemo);
   const cancelOrder = useCancelOrder();
@@ -197,24 +200,33 @@ export function BottomPanel({
 
   return (
     <div
-      className="border-t border-border flex flex-col shrink-0 bg-card max-h-[150px] md:max-h-none"
-      style={{ height }}
+      className={cn(
+        "border-t border-border flex flex-col bg-card",
+        fill ? "flex-1 min-h-0" : "shrink-0 max-h-[150px] md:max-h-none",
+      )}
+      style={fill ? undefined : { height }}
     >
       {/* Tab bar */}
-      <div className="flex items-center gap-0.5 px-2 py-1 border-b border-border bg-secondary text-xs overflow-x-auto no-scrollbar">
+      <div
+        className={cn(
+          "flex items-center gap-0.5 px-2 border-b border-border bg-secondary overflow-x-auto no-scrollbar",
+          fill ? "py-1.5 text-[13px]" : "py-1 text-xs",
+        )}
+      >
         {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => onTabChange(t.key)}
             className={cn(
-              "flex items-center gap-1 px-2.5 py-1 rounded shrink-0 whitespace-nowrap",
+              "flex items-center gap-1 px-2.5 rounded shrink-0 whitespace-nowrap",
+              fill ? "py-2 gap-1.5" : "py-1",
               tab === t.key
                 ? "bg-card text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
             <t.icon className="h-3 w-3" />
-            <span className="hidden md:inline">{t.label}</span>
+            <span className={fill ? "inline" : "hidden md:inline"}>{t.label}</span>
             {t.count !== undefined && t.count > 0 && (
               <span className="bg-primary text-primary-foreground rounded-full px-1.5 text-[9px]">
                 {t.count}

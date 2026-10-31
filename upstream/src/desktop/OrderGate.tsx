@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { Button } from "../components/ui/button.tsx";
 import { cn } from "../lib/utils.ts";
 import { answerGate, useGatePrompt } from "./order-gate.ts";
+import { isMobileApp } from "../mobile/is-mobile.ts";
 
 /**
  * OpenCharts Desktop addition: the dialogs the order router opens.
@@ -51,7 +52,12 @@ export function OrderGate() {
                     Create {prompt.keyWord === "API token" ? "an API token" : "an API key"} in your {prompt.venueLabel} account
                     {prompt.keyWord === "API token" ? "" : " with read and spot trading only (never withdrawals)"}.
                   </li>
-                  <li>Open {prompt.keyWord === "API token" ? "Data › OANDA token" : "Data › Exchange API keys"} and paste it. It is checked, then stored encrypted on this PC.</li>
+                  {/* OpenCharts Mobile patch: the phone keeps these under More and stores keys with the Android Keystore. */}
+                  <li>
+                    Open {isMobileApp() ? "More › " : "Data › "}
+                    {prompt.keyWord === "API token" ? "OANDA token" : "Exchange API keys"} and paste it. It is checked, then stored encrypted on
+                    this {isMobileApp() ? "phone" : "PC"}.
+                  </li>
                   <li>Place the order again: it goes to your {prompt.venueLabel} account after one confirmation.</li>
                 </ol>
                 <p className="text-[12px] text-muted-foreground">

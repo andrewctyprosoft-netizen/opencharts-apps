@@ -12,6 +12,7 @@ import { playAlertBeep } from "../lib/chart-plugins/drawing-tools/line-alerts.ts
 import { alertsStore } from "./alerts-store.ts";
 import { type DeskMessage, openDeskChannel } from "./desk-channel.ts";
 import { isDesktopAdapter } from "./is-desktop.ts";
+import { isMobileApp } from "../mobile/is-mobile.ts";
 
 /**
  * OpenCharts Desktop addition, mounted inside the provider when the desktop
@@ -90,7 +91,7 @@ export function DesktopSync() {
     // "Open chart" in the portfolio and market overview windows (and a clicked notification) charts the pair here.
     const offOpenChart = bridge?.app.onOpenChart((symbol) => {
       if (store().symbols.some((s) => s.name === symbol)) store().setSelectedSymbol(symbol);
-      else toast.warning("Not in the symbol list", `${symbol} is not listed; switch its exchange on in Data › Live prices.`);
+      else toast.warning("Not in the symbol list", `${symbol} is not listed; switch its exchange on in ${isMobileApp() ? "More › Market data" : "Data › Live prices"}.`);
     });
 
     // ── Alerts & positions window: broadcast the paper account, run its commands ──

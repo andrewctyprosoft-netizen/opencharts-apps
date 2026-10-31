@@ -2,11 +2,16 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
-export default defineConfig({
+// OpenCharts Mobile patch: `vite --mode mobile` (npm run dev in ../android) also serves the
+// Android bridge (bridge.js, the /__oc/net proxy), so the phone app runs in a browser.
+export default defineConfig(async ({ mode }) => ({
   // GitHub Pages serves a project site from /<repo>/, so the demo workflow sets
   // BASE_PATH. Local builds and self-hosting stay at the domain root.
   base: process.env.BASE_PATH ?? "/",
-  plugins: [react()],
+  plugins: [
+    react(),
+    ...(mode === "mobile" ? [(await import("../android/dev/tools/vite-mobile-dev.mjs")).mobileDev()] : []),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -50,4 +55,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

@@ -61,6 +61,8 @@ import {
   DrawingSettingsDialog,
 } from "./DrawingToolsOverlay.tsx";
 import { DrawingToolRail } from "./DrawingToolRail.tsx";
+import { isMobileApp } from "../../mobile/is-mobile.ts";
+import { useMobileStore } from "../../mobile/mobile-store.ts";
 import { DRAWING_STYLES_EVENT, getStyleDefaults } from "./drawingStyles.ts";
 import { NewsOverlay } from "./NewsOverlay.tsx";
 import { ObjectTreePanel } from "./ObjectTreePanel.tsx";
@@ -1220,6 +1222,26 @@ export function ChartPanel({
     null,
   );
   const [showChartSettings, setShowChartSettings] = useState(false);
+
+  // OpenCharts Mobile patch: the phone header's menu button opens the chart menu
+  // (there is no right-click), priced at the current mid for "Set alert" and the
+  // one-lot orders.
+  const mobile = isMobileApp();
+  const chartMenuNonce = useMobileStore((s) => s.chartMenuNonce);
+  const tickRef = useRef(tick);
+  useEffect(() => {
+    tickRef.current = tick;
+  }, [tick]);
+  useEffect(() => {
+    if (!chartMenuNonce) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    const tk = tickRef.current;
+    setChartMenu({
+      x: Math.max(8, (rect ? rect.right : window.innerWidth) - 290),
+      y: (rect ? rect.top : 100) + 8,
+      price: tk ? (tk.bid + tk.ask) / 2 : null,
+    });
+  }, [chartMenuNonce]);
   // The style toolbar / settings dialog only apply to a single selection.
   const selectedDrawing = useMemo(
     () =>
@@ -2133,6 +2155,8 @@ export function ChartPanel({
       <div ref={containerRef} className="w-full h-full" onContextMenu={handleChartContextMenu} />
 
       {/* Left vertical tool rail (TradingView-style grouped flyouts) */}
+      {/* OpenCharts Mobile patch: the phone layout shows its own drawing bar under the chart. */}
+      {!mobile && (
       <DrawingToolRail
         drawingTool={drawingTool}
         onDrawingTool={(t) => onDrawingToolSelect?.(t)}
@@ -2144,6 +2168,7 @@ export function ChartPanel({
         onUpdateDrawing={onUpdateDrawing}
         onClearDrawings={onClearDrawings}
       />
+      )}
     </div>
   );
 }

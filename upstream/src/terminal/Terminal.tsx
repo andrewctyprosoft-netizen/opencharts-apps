@@ -1,5 +1,7 @@
 import { TerminalProvider } from "./context.tsx";
 import { TradingPage } from "../pages/TradingPage.tsx";
+import { isMobileApp } from "../mobile/is-mobile.ts";
+import { MobileTradingPage } from "../mobile/MobileTradingPage.tsx";
 
 /**
  * The full terminal: chart, toolbar, order ticket, depth, watchlist, positions
@@ -17,7 +19,8 @@ import { TradingPage } from "../pages/TradingPage.tsx";
 export function Terminal() {
   return (
     <TerminalProvider>
-      <TradingPage />
+      {/* OpenCharts Mobile patch: the Android app (window.ocMobile) uses the phone layout. */}
+      {isMobileApp() ? <MobileTradingPage /> : <TradingPage />}
     </TerminalProvider>
   );
 }

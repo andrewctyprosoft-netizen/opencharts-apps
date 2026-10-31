@@ -6,6 +6,8 @@ import type { OpenChartsAdapter } from "./adapter/types.ts";
 import { DesktopSync } from "./desktop/DesktopSync.tsx";
 import { OrderGate } from "./desktop/OrderGate.tsx";
 import { Terminal } from "./terminal/Terminal.tsx";
+import { isMobileApp } from "./mobile/is-mobile.ts";
+import { MobileSplash } from "./mobile/MobileSplash.tsx";
 
 /**
  * The hosted demo's root.
@@ -69,7 +71,8 @@ function TerminalRoot() {
       });
   }, []);
 
-  if (!adapter) return null;
+  // OpenCharts Mobile patch: the phone shows a start screen while the exchanges answer.
+  if (!adapter) return isMobileApp() ? <MobileSplash /> : null;
   return (
     <OpenChartsProvider adapter={adapter}>
       <Terminal />

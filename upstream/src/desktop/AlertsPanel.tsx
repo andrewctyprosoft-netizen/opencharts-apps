@@ -7,6 +7,7 @@ import { toast } from "../services/toast.ts";
 import { alertsStore, useAlerts } from "./alerts-store.ts";
 import { fmtPrice } from "./dash-format.ts";
 import { VenueBadge } from "./VenueBadge.tsx";
+import { isMobileApp } from "../mobile/is-mobile.ts";
 
 /**
  * OpenCharts Desktop addition: the price alert list, used by the Alerts tab
@@ -175,7 +176,11 @@ export function AlertsPanel({ defaultSymbol, midOf, symbols, onChart, compact }:
               {!shown.length && (
                 <tr>
                   <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">
-                    {alerts.length ? "No alerts in this view." : "No alerts yet. Right-click a price on the chart and choose Set alert, or add one above."}
+                    {alerts.length
+                      ? "No alerts in this view."
+                      : isMobileApp() // OpenCharts Mobile patch: no right-click on a phone
+                        ? "No alerts yet. Add one above, or use the chart's ⋮ menu › Set alert."
+                        : "No alerts yet. Right-click a price on the chart and choose Set alert, or add one above."}
                   </td>
                 </tr>
               )}

@@ -1,18 +1,12 @@
 import {
-  Activity,
-  AlignCenter,
   ArrowDownRight,
   ArrowRight,
   ArrowUpDown,
   ArrowUpRight,
   BarChart3,
-  CalendarDays,
   ChevronDown,
   Circle,
-  Clock,
-  Crosshair,
   Equal,
-  Info,
   Layers,
   type LucideIcon,
   Magnet,
@@ -53,6 +47,8 @@ import { venueGroup, venueOf } from "../../../../adapters/venues.ts";
 /** OpenCharts Desktop patch: rows shown at once in the symbol picker. */
 const PICKER_ROWS = 150;
 import { ChartTemplatesMenu } from "./ChartTemplatesMenu.tsx";
+// OpenCharts Mobile patch: the plugin list moved to its own module, shared with the phone layout.
+import { CHART_PLUGIN_ITEMS } from "./chart-plugin-items.ts";
 import { ReplayHUD } from "./ReplayHUD.tsx";
 import { getPipDigits } from "./utils.ts";
 
@@ -500,14 +496,6 @@ export function ToolButton({
   );
 }
 
-const CHART_PLUGIN_ITEMS = [
-  { id: "crosshair", icon: Crosshair, label: "Crosshair Highlight" },
-  { id: "session", icon: Clock, label: "Session Highlighting" },
-  { id: "session-breaks", icon: CalendarDays, label: "Session Breaks" },
-  { id: "bands", icon: AlignCenter, label: "Bands Indicator" },
-  { id: "tooltip", icon: Info, label: "OHLCV Tooltip" },
-  { id: "delta-tooltip", icon: Activity, label: "Delta Tooltip" },
-] satisfies Array<{ id: string; icon: LucideIcon; label: string }>;
 
 function PluginsDropdown({
   activePlugins,

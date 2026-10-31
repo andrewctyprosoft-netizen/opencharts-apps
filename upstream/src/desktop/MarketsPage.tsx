@@ -48,6 +48,7 @@ import type { DesktopBridge } from "../../../adapters/types.ts";
 import { ipcMessage } from "../../../adapters/venues.ts";
 import { cn } from "../lib/utils.ts";
 import { fmtNum, fmtPct, fmtPrice, fmtUsd, pctClass } from "./dash-format.ts";
+import { isMobileApp } from "../mobile/is-mobile.ts";
 
 /**
  * OpenCharts Desktop addition: File › Dashboard › Market overview. Lists coins
@@ -135,6 +136,10 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
   });
   const [condition, setCondition] = useState("");
   const [showHelp, setShowHelp] = useState(false);
+  // OpenCharts Mobile patch: on the phone the ranges, sort and condition fold away behind Filters.
+  const mobile = isMobileApp();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const showFilters = !mobile || filtersOpen;
   const [limit, setLimit] = useState(PAGE);
   const [history, setHistory] = useState(() => new Map<string, Closes>());
   const inflight = useRef(new Set<string>());
@@ -472,15 +477,15 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
   return (
     <div className="flex flex-col h-full">
       {/* Header and tabs */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-card">
-        <h1 className="text-base font-semibold mr-3">Market overview</h1>
+      <div className={cn("flex items-center gap-2 px-4 py-2.5 border-b border-border bg-card", mobile && "overflow-x-auto no-scrollbar px-3")}>
+        <h1 className={cn("text-base font-semibold mr-3", mobile && "hidden")}>Market overview</h1>
         {TABS.map((t) => (
           <button
             key={t.id}
             data-tab={t.id}
             onClick={() => selectTab(t.id)}
             className={cn(
-              "px-3 py-1.5 rounded-md text-[13px] font-medium",
+              "px-3 py-1.5 rounded-md text-[13px] font-medium shrink-0 whitespace-nowrap",
               tab === t.id
                 ? "bg-primary text-primary-foreground"
                 : "hover:bg-secondary text-muted-foreground",
@@ -560,6 +565,23 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
             className="w-36 px-2 py-1 rounded border border-border bg-background"
           />
         </label>
+        {mobile && (
+          <div className="flex items-center gap-2 w-full">
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((v) => !v)}
+              className={cn("h-9 px-3 rounded-md border flex items-center gap-1", filtersOpen ? "border-primary text-primary" : "border-border")}
+            >
+              Filters &amp; sort {filtersOpen ? "▴" : "▾"}
+            </button>
+            <span className="flex-1" />
+            {(current.loading || loadingHistory) && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+            <span className="text-muted-foreground">
+              {shown.length.toLocaleString()} of {total.toLocaleString()}
+            </span>
+          </div>
+        )}
+        {showFilters && (<>
         <RangeInputs
           label="Volume"
           disabled={!has("volume")}
@@ -622,9 +644,11 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
         >
           <RotateCcw className="h-3.5 w-3.5" /> Reset
         </button>
+        </>)}
       </div>
 
       {/* Custom condition */}
+      {showFilters && (
       <div className="px-4 py-2 border-b border-border bg-card/40 text-[12px]">
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground shrink-0">Condition</span>
@@ -655,7 +679,7 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
             className="text-muted-foreground shrink-0 hidden xl:inline"
             title="Or drag the scrollbar under the table"
           >
-            Shift + wheel scrolls sideways
+            {isMobileApp() ? "Swipe the table sideways" : "Shift + wheel scrolls sideways"}
           </span>
           <span
             className="text-muted-foreground shrink-0"
@@ -703,6 +727,7 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
           </div>
         )}
       </div>
+      )}
 
       {/* Table */}
       <div className="flex-1 min-h-0 overflow-auto" data-testid="market-scroll">

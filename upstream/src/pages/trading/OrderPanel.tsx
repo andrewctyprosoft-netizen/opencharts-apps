@@ -43,6 +43,8 @@ export interface OrderPanelProps {
   soundMuted?: boolean;
   onToggleMute?: () => void;
   onOrderSuccess?: () => void;
+  /** OpenCharts Mobile patch: the side the ticket opens on (the phone's Buy / Sell buttons). */
+  initialSide?: "BUY" | "SELL";
 }
 
 export function OrderPanel({
@@ -58,6 +60,7 @@ export function OrderPanel({
   soundMuted,
   onToggleMute,
   onOrderSuccess,
+  initialSide = "BUY",
 }: OrderPanelProps) {
   const isDemo = useAuthStore((s) => s.isDemo);
   // OpenCharts Desktop patch: price decimals follow the instrument (was a fixed 5).
@@ -66,7 +69,7 @@ export function OrderPanel({
     { tickSize: typeof tickSize === "number" || typeof tickSize === "string" ? tickSize : undefined },
     symbol,
   );
-  const [side, setSide] = useState<"BUY" | "SELL">("BUY");
+  const [side, setSide] = useState<"BUY" | "SELL">(initialSide);
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT" | "STOP">("MARKET");
   const [quantity, setQuantity] = useState(() => {
     const prefs = readTraderPrefs();

@@ -1,0 +1,44 @@
+# Dependencies and builds
+node_modules/
+dist/
+dist-lib/
+coverage/
+*.tsbuildinfo
+.gradle/
+build/
+.cache/
+
+# Desktop: built terminal and licence copies made by build:web
+desktop/web/
+desktop/LICENSE
+desktop/NOTICE
+
+# Android: built web bundle and files Capacitor copies in
+android/www/
+android/android/app/src/main/assets/public/
+android/android/app/src/main/assets/capacitor.config.json
+android/android/app/src/main/assets/capacitor.plugins.json
+android/android/local.properties
+
+# Test output (Electron and emulator profiles, screenshots, logs)
+dev/out/
+**/dev/out/
+
+# Secrets: never commit
+.env
+.env.*
+*.pem
+*.keystore
+*.jks
+keystore.properties
+settings.json
+
+# Local tool state and OS noise
+.claude/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+*.tmp

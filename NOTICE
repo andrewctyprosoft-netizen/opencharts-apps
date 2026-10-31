@@ -1,0 +1,21 @@
+OpenCharts Desktop & Android
+Copyright (c) 2026 ThriveLab. MIT licence (see LICENSE).
+
+This repository contains or depends on third-party software:
+
+- OpenCharts (upstream/), Copyright (c) dylanpersonguy and contributors, MIT licence.
+  https://github.com/dylanpersonguy/OpenCharts — see upstream/LICENSE and upstream/NOTICE.
+  The copy in upstream/ is modified; every change is marked "OpenCharts Desktop patch"
+  or "OpenCharts Mobile patch/addition".
+
+- TradingView Lightweight Charts(TM), Copyright (c) 2025 TradingView, Inc., Apache License 2.0.
+  https://www.tradingview.com/ — the chart keeps TradingView's attribution logo.
+
+- Electron and electron-builder (desktop/), MIT licence.
+- Capacitor (android/), MIT licence.
+- @noble/hashes, @noble/curves, @noble/ciphers (android/bridge), MIT licence.
+- buffer (android/bridge), MIT licence.
+- Material Icons "notifications" glyph (Android notification icon), Apache License 2.0.
+
+This project is not affiliated with or endorsed by OpenCharts, TradingView, or any exchange
+or data provider named in it. Market data comes from their public APIs under their terms.

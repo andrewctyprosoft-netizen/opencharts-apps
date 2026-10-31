@@ -126,8 +126,13 @@ async function main() {
   const model = adb("shell", "getprop", "ro.product.model");
   const sdk = adb("shell", "getprop", "ro.build.version.sdk");
   console.log(`device: ${model} (API ${sdk})`);
-  adb("install", "-r", "-g", apk);
-  adb("shell", "pm", "clear", PKG);
+  // A fresh install: a release build signed with another key cannot be replaced by the debug one.
+  try {
+    adb("uninstall", PKG);
+  } catch {
+    // not installed
+  }
+  adb("install", "-g", apk);
   adb("shell", "pm", "grant", PKG, "android.permission.POST_NOTIFICATIONS");
   adb("shell", "am", "start", "-W", "-n", `${PKG}/.MainActivity`);
   await wait(1500);
@@ -147,8 +152,10 @@ async function main() {
     const q = (await window.ocDesktop.web.get("https://api.binance.com/api/v3/ticker/bookTicker?symbol=BTCUSDT")).body;
     const fresh = (Number(q.bidPrice) + Number(q.askPrice)) / 2;
     await new Promise((r) => setTimeout(r, 3000));
-    const shown = window.__ocDesktop.mid("BINANCE:BTCUSDT");
-    return { fresh, shown, header: document.querySelector('[data-testid="mobile-price"]').textContent, live: Math.abs(shown - fresh) / fresh < 0.0005 };
+    // The price on screen (an unchanged market sends no tick, so internal mids can still be empty).
+    const header = document.querySelector('[data-testid="mobile-price"]').textContent;
+    const shown = Number(header.replace(/,/g, ""));
+    return { fresh, shown, header, live: Math.abs(shown - fresh) / fresh < 0.0005 };
   })()`);
   r.insets = await js(`({ top: getComputedStyle(document.documentElement).getPropertyValue("--safe-area-inset-top"), bottom: getComputedStyle(document.documentElement).getPropertyValue("--safe-area-inset-bottom") })`);
   shot("02-chart");
@@ -212,7 +219,12 @@ async function main() {
   await wait(600);
 
   // 6. A DEX pool and spot gold.
-  const dex = await js(`window.__ocDesktop.smokeAddDex("pepe").catch((e) => null)`);
+  // GeckoTerminal's free API allows 30 calls a minute; after a rate limit, try once more.
+  let dex = await js(`window.__ocDesktop.smokeAddDex("pepe").catch((e) => null)`);
+  if (!dex) {
+    await wait(20_000);
+    dex = await js(`window.__ocDesktop.smokeAddDex("pepe").catch((e) => null)`);
+  }
   r.dex = dex ? await js(`window.__ocDesktop.smokeChart(${JSON.stringify(dex)})`) : { error: "no pool" };
   await wait(5000);
   shot("08-dex");

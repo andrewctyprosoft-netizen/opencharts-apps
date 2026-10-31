@@ -33,8 +33,9 @@ fs.cpSync(path.join(upstream, "dist"), www, { recursive: true });
 await buildBridge({ outfile: path.join(www, "bridge.js") });
 // The bridge (window.ocDesktop / window.ocMobile) must run before the terminal's module script.
 const index = path.join(www, "index.html");
-fs.writeFileSync(index, fs.readFileSync(index, "utf8").replace("<head>", '<head>
-    <script src="./bridge.js"></script>'));
+const html = fs.readFileSync(index, "utf8");
+if (!html.includes("<head>")) throw new Error("www/index.html has no <head> to load the bridge in.");
+fs.writeFileSync(index, html.replace("<head>", '<head>\n    <script src="./bridge.js"></script>'));
 for (const page of ["keys.html", "oanda-token.html"]) fs.copyFileSync(path.join(root, "bridge", page), path.join(www, page));
 for (const f of ["LICENSE", "NOTICE"]) fs.copyFileSync(path.join(upstream, f), path.join(www, f));
 console.log(`web bundle ready: ${www}`);

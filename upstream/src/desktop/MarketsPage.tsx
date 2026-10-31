@@ -445,6 +445,8 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
           "sticky z-[2]",
           i === 0 ? "left-0" : "left-12",
           columns[i]!.key === "rank" && "w-12 min-w-12 max-w-12",
+          // OpenCharts Mobile patch: a long pinned name ("Binance Bridged USDT …") filled a phone screen.
+          mobile && i === pinned - 1 && i > 0 && "max-w-28 overflow-hidden text-ellipsis",
           i === pinned - 1 && "shadow-[inset_-1px_0_0_hsl(var(--border))]",
         )
       : "";

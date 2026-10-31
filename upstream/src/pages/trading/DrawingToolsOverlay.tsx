@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useDragOffset } from "../../hooks/useDragOffset.ts";
+import { styleKey } from "../../lib/chart-plugins/drawing-tools/manager.ts";
+import { proHasFill, proHasText, proLabel } from "../../lib/chart-plugins/drawing-tools/pro/index.ts";
 import { FIB_EXT_LEVELS, FIB_LEVELS } from "../../lib/chart-plugins/drawing-tools/resolve.ts";
 import { cn } from "../../lib/utils.ts";
 import {
@@ -568,7 +570,7 @@ function LineStyleSection({
       {(drawing.type === "trendline" || drawing.type === "arrow") && (
         <ArrowheadToggles drawing={drawing} patch={patch} />
       )}
-      {FILLABLE.has(drawing.type) && <FillControls drawing={drawing} patch={patch} />}
+      {(FILLABLE.has(drawing.type) || proHasFill(drawing)) && <FillControls drawing={drawing} patch={patch} />}
       {(drawing.type === "fibonacci" || drawing.type === "fibextension") && (
         <FibLevelsRow drawing={drawing} patch={patch} />
       )}
@@ -590,7 +592,7 @@ function StyleTools({
   return (
     <div className="space-y-2 pt-1 border-t border-border/60">
       <div className="flex items-center gap-2">
-        <button type="button" className={btn} onClick={() => setTypeDefault(drawing.type, drawing)}>
+        <button type="button" className={btn} onClick={() => setTypeDefault(styleKey(drawing), drawing)}>
           Set as default
         </button>
         <button
@@ -639,7 +641,7 @@ export function DrawingSettingsDialog({
 }: DrawingSettingsProps) {
   const patch = (p: Partial<DrawingLine>) => onUpdate({ ...drawing, ...p });
   const drag = useDragOffset();
-  const isText = drawing.type === "text";
+  const isText = drawing.type === "text" || proHasText(drawing);
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40">
       <div
@@ -655,7 +657,7 @@ export function DrawingSettingsDialog({
         >
           <span className="flex items-center gap-1.5 text-sm font-semibold capitalize">
             <GripVertical className="h-3.5 w-3.5 text-muted-foreground/60" />
-            {drawing.type} settings
+            {proLabel(drawing) ?? drawing.type} settings
           </span>
           <button
             type="button"
@@ -673,7 +675,7 @@ export function DrawingSettingsDialog({
         )}
 
         <div className="pt-1 border-t border-border/60" />
-        <CoordinateInputs drawing={drawing} patch={patch} />
+        {drawing.type !== "pro" && <CoordinateInputs drawing={drawing} patch={patch} />}
 
         <SettingsRow label="Visibility">
           <select

@@ -4,6 +4,8 @@ import { usePlaceOrder } from "../../services/queries.ts";
 import { formatNumber, cn } from "../../lib/utils.ts";
 import { toast } from "../../services/toast.ts";
 import { safeStorage } from "../../lib/safe-storage.ts";
+import { VenueBadge } from "../../desktop/VenueBadge.tsx";
+import { venueGroup } from "../../../../adapters/venues.ts";
 
 export function WatchlistPanel({
   symbols,
@@ -52,7 +54,8 @@ export function WatchlistPanel({
   }, []);
 
   const categories = useMemo(() => {
-    const cats = new Set(symbols.map((s) => s.category || "Other"));
+    // OpenCharts Desktop patch: group by venue (Binance, OKX …, OANDA, DEX) instead of category.
+    const cats = new Set(symbols.map((s) => venueGroup(s)));
     return Array.from(cats).sort();
   }, [symbols]);
 
@@ -63,7 +66,7 @@ export function WatchlistPanel({
       .filter((s) => {
         if (filter && !s.name.toLowerCase().includes(filter.toLowerCase())) return false;
         if (selectedCat === "★") return favorites.has(s.name);
-        if (selectedCat && selectedCat !== "★" && s.category !== selectedCat) return false;
+        if (selectedCat && selectedCat !== "★" && venueGroup(s) !== selectedCat) return false;
         return s.isActive !== false;
       })
       .sort((a, b) => {
@@ -123,7 +126,8 @@ export function WatchlistPanel({
         ))}
       </div>
       <div className="flex-1 overflow-y-auto">
-        {filtered.map((s) => {
+        {/* OpenCharts Desktop patch: first 200 rows; search or a venue chip narrows the rest. */}
+        {filtered.slice(0, 200).map((s) => {
           const t = ticks[s.name];
           const isFav = favorites.has(s.name);
           const handleQuickTrade = (side: "BUY" | "SELL") => {
@@ -172,7 +176,7 @@ export function WatchlistPanel({
               </button>
               <button onClick={() => onSelect(s.name)} className="text-left flex-1 min-w-0">
                 <div className="font-semibold">{s.name}</div>
-                <div className="text-[10px] text-muted-foreground">{s.category}</div>
+                <div className="mt-0.5"><VenueBadge symbol={s} /></div>
               </button>
               {t ? (
                 <div className="flex items-center gap-1">

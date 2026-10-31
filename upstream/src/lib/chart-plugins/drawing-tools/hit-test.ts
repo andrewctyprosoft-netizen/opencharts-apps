@@ -1,4 +1,5 @@
 import { dist, distToSegment, type Pt, pointInBox } from "./geometry";
+import { hitPro } from "./pro";
 import type { Hit, PriceKey, ResolvedEntry, TimeKey } from "./types";
 
 const HANDLE_TOLERANCE = 8;
@@ -48,6 +49,8 @@ function hitEntry(e: ResolvedEntry, p: Pt, tol: Tol): Hit | null {
       return hitBoxShape(e, p, tol);
     case "text":
       return hitText(e, p, tol);
+    case "pro":
+      return hitPro(e, p, tol);
     default:
       return null;
   }

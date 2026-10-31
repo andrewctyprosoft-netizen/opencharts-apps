@@ -1,5 +1,6 @@
 import type { BitmapCoordinatesRenderingScope } from "fancy-canvas";
 import type { DrawingLine, DrawingLineStyle } from "../../../pages/trading/constants";
+import { renderPro } from "./pro";
 import type { DrawCtxInfo, ResolvedEntry, ResolvedFibLevel } from "./types";
 
 const HANDLE_RADIUS = 5;
@@ -118,6 +119,9 @@ export function renderEntry(
       break;
     case "fibextension":
       renderFibonacci(scope, e);
+      break;
+    case "pro":
+      renderPro(scope, e);
       break;
     default:
       break;

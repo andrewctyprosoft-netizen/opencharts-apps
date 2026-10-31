@@ -8,7 +8,9 @@ import type {
 import { DrawingsPrimitive } from "./drawings-primitive";
 import { dist, type Pt, snapAngle } from "./geometry";
 import { hitTest } from "./hit-test";
-import { makeResolveCtx, type ResolveCtx, resolveEntry, timeToX, xToTime } from "./resolve";
+import { hasHandles, isProTool, PRO_TOOLS, type ProToolId, proRequiredPoints } from "./pro";
+import { PRO_DEFAULT_COLOR } from "./pro/catalog";
+import { makeResolveCtx, type ResolveCtx, resolveEntry, timeToX, xToTime, xToTimeExact } from "./resolve";
 import type { DataPoint, DrawingCallbacks, Hit, ResolvedEntry } from "./types";
 
 // Releasing the pointer farther than this from the first anchor commits the
@@ -36,6 +38,10 @@ const TOOL_SHORTCUTS: Record<string, DrawingTool> = {
   KeyF: "fibonacci",
   KeyR: "rectangle",
   KeyM: "measure",
+  // OpenCharts Desktop patch: TradingView's other line shortcuts.
+  KeyJ: "horizontal-ray",
+  KeyV: "vertical",
+  KeyC: "crossline",
 };
 
 interface OhlcBar {
@@ -79,6 +85,24 @@ function definedOnly<T extends object>(obj: T): Partial<T> {
   return out;
 }
 
+/** OpenCharts Desktop patch: style defaults are kept per pro tool, not for all "pro" drawings. */
+export function styleKey(d: Pick<DrawingLine, "type" | "tool">): string {
+  return d.type === "pro" && d.tool ? `pro:${d.tool}` : d.type;
+}
+
+/** The ruler (measure tool): TradingView's date-and-price range readout, not saved. */
+function measureDrawing(p1: DataPoint, p2: DataPoint): DrawingLine {
+  return {
+    id: "measure",
+    type: "pro",
+    tool: "date-price-range",
+    color: "#2962ff",
+    price: p1.price,
+    time: p1.time,
+    points: [p1, p2],
+  };
+}
+
 function isTextInputTarget(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   return t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName);
@@ -105,6 +129,12 @@ interface PlacingState {
   p1: DataPoint;
   startX: number;
   startY: number;
+  /** OpenCharts Desktop patch: points placed so far by a "pro" tool. */
+  pts?: DataPoint[];
+  /** Free-hand stroke in progress, and where its last point was recorded. */
+  free?: boolean;
+  lastX?: number;
+  lastY?: number;
 }
 
 export interface DrawingToolsManagerOptions {
@@ -295,7 +325,7 @@ export class DrawingToolsManager {
   private makeNew(tool: DrawingTool, p1: DataPoint, p2: DataPoint): DrawingLine {
     const d = this.buildNew(tool, p1, p2);
     if (tool === "measure") return d;
-    const def = this.styleDefaults[d.type];
+    const def = this.styleDefaults[styleKey(d)];
     return def ? { ...d, ...definedOnly(def) } : d;
   }
 
@@ -314,8 +344,7 @@ export class DrawingToolsManager {
     if (tool === "ray") return { ...two, type: "trendline", extendRight: true };
     if (tool === "extended")
       return { ...two, type: "trendline", extendLeft: true, extendRight: true };
-    if (tool === "measure")
-      return { ...two, type: "trendline", color: "#b2b5be", lineStyle: "dashed" };
+    if (tool === "measure") return measureDrawing(p1, p2);
     if (tool === "channel") {
       // Offset line defaults parallel and mirrored below so it's visible/draggable.
       return { ...two, type: "channel", time3: p1.time, price3: 2 * p1.price - p2.price };
@@ -385,6 +414,12 @@ export class DrawingToolsManager {
   };
 
   private handleDblClick = (e: MouseEvent): void => {
+    if (this.placing?.pts && isProTool(this.tool) && PRO_TOOLS[this.tool].points === "multi") {
+      e.preventDefault();
+      e.stopPropagation();
+      this.finishMulti();
+      return;
+    }
     if (this.tool !== "none") return;
     const pos = this.eventPos(e);
     if (!pos) return;
@@ -476,6 +511,11 @@ export class DrawingToolsManager {
     if (this.handleClipboardShortcut(e) || this.handleArrowNudge(e)) return;
     if (e.key === "Escape") {
       this.handleEscape();
+      return;
+    }
+    if (e.key === "Enter" && this.placing?.pts && !this.placing.free) {
+      e.preventDefault();
+      this.finishMulti();
       return;
     }
     if (
@@ -575,6 +615,7 @@ export class DrawingToolsManager {
       time: d.time != null ? d.time + dt : undefined,
       time2: d.time2 != null ? d.time2 + dt : undefined,
       time3: d.time3 != null ? d.time3 + dt : undefined,
+      points: d.points?.map((p) => ({ ...p, time: p.time + dt })),
     };
   }
 
@@ -615,6 +656,10 @@ export class DrawingToolsManager {
     // Take the event over so the chart doesn't pan while drawing.
     e.preventDefault();
     e.stopPropagation();
+    if (isProTool(this.tool)) {
+      this.proPlacementClick(pos, pt);
+      return;
+    }
     if (this.tool === "horizontal" || this.tool === "vertical" || this.tool === "text") {
       this.commitDrawing(this.makeNew(this.tool, pt, pt));
       return;
@@ -638,16 +683,7 @@ export class DrawingToolsManager {
 
   private finishMeasure(p1: DataPoint, p2: DataPoint): void {
     this.placing = null;
-    this.measureResult = {
-      id: "measure",
-      type: "trendline",
-      color: "#b2b5be",
-      lineStyle: "dashed",
-      price: p1.price,
-      time: p1.time,
-      price2: p2.price,
-      time2: p2.time,
-    };
+    this.measureResult = measureDrawing(p1, p2);
     this.primitive.setPreview(this.measureResult);
     this.tool = "none";
     this.applyCursor(null);
@@ -661,6 +697,10 @@ export class DrawingToolsManager {
   }
 
   private placingMove(pos: Pt, shiftKey: boolean): void {
+    if (this.placing?.pts) {
+      this.proPlacingMove(pos, shiftKey);
+      return;
+    }
     const pt = this.pointFor(pos, shiftKey, this.placementAnchorPx());
     if (!pt || !this.placing) return;
     this.primitive.setPreview(this.makeNew(this.tool, this.placing.p1, pt));
@@ -668,6 +708,10 @@ export class DrawingToolsManager {
 
   private maybeCommitPlacement(pos: Pt | null, shiftKey: boolean): void {
     const placing = this.placing!;
+    if (placing.pts) {
+      this.proPlacementRelease(pos, shiftKey);
+      return;
+    }
     if (!pos || dist(pos, { x: placing.startX, y: placing.startY }) < DRAG_COMMIT_THRESHOLD_PX) {
       return;
     }
@@ -691,6 +735,193 @@ export class DrawingToolsManager {
   private cancelPlacement(): void {
     this.placing = null;
     this.primitive.setPreview(null);
+  }
+
+  // ── OpenCharts Desktop patch: placing the extra ("pro") tools ──────
+  // Fixed-count tools take one click per point (press-drag-release also places the next
+  // point); "multi" tools finish on double-click or Enter; "free" tools paint while dragging.
+
+  private proDraft(tool: ProToolId, pts: DataPoint[], extra: Partial<DrawingLine> = {}): DrawingLine {
+    const def = PRO_TOOLS[tool];
+    const d: DrawingLine = {
+      id: crypto.randomUUID(),
+      type: "pro",
+      tool,
+      points: pts,
+      price: pts[0]!.price,
+      time: pts[0]!.time,
+      color: def.color ?? PRO_DEFAULT_COLOR,
+      createdTf: this.timeframe,
+      ...(def.width ? { width: def.width } : {}),
+      ...(def.text !== undefined ? { text: def.text } : {}),
+      ...extra,
+    };
+    const style = this.styleDefaults[styleKey(d)];
+    return style ? { ...d, ...definedOnly(style) } : d;
+  }
+
+  private proPreview(pts: DataPoint[]): void {
+    this.primitive.setPreview(this.proDraft(this.tool as ProToolId, pts));
+  }
+
+  /** Data point under the cursor without bar snapping (free-hand strokes). */
+  private exactPoint(pos: Pt): DataPoint | null {
+    const time = xToTimeExact(this.ctx(), pos.x);
+    const price = this.series.coordinateToPrice(pos.y);
+    return time === null || price === null ? null : { time, price };
+  }
+
+  private proPlacementClick(pos: Pt, snapped: DataPoint): void {
+    const def = PRO_TOOLS[this.tool as ProToolId];
+    const pt = def.points === "free" ? (this.exactPoint(pos) ?? snapped) : snapped;
+    if (def.points === 1) {
+      this.commitPro([pt]);
+      return;
+    }
+    if (!this.placing?.pts) {
+      const free = def.points === "free";
+      this.placing = { p1: pt, startX: pos.x, startY: pos.y, pts: [pt], free, lastX: pos.x, lastY: pos.y };
+      this.proPreview(free ? [pt] : [pt, pt]);
+      return;
+    }
+    this.addProPoint(pos, pt);
+  }
+
+  private addProPoint(pos: Pt, pt: DataPoint): void {
+    const placing = this.placing!;
+    const tool = this.tool as ProToolId;
+    // A polyline closes into a shape when its first point is clicked again.
+    if (tool === "polyline" && placing.pts!.length >= 3 && this.nearFirstPoint(pos)) {
+      this.commitPro(placing.pts!, { closed: true });
+      return;
+    }
+    const pts = [...placing.pts!, pt];
+    if (pts.length >= proRequiredPoints(tool)) {
+      this.commitPro(pts);
+      return;
+    }
+    this.placing = { ...placing, pts, startX: pos.x, startY: pos.y };
+    this.proPreview([...pts, pt]);
+  }
+
+  private nearFirstPoint(pos: Pt): boolean {
+    const first = this.placing?.pts?.[0];
+    if (!first) return false;
+    const x = timeToX(this.ctx(), first.time);
+    const y = this.series.priceToCoordinate(first.price);
+    return x !== null && y !== null && dist(pos, { x, y }) <= SNAP_ANCHOR_PX * 1.5;
+  }
+
+  private proPlacingMove(pos: Pt, shiftKey: boolean): void {
+    const placing = this.placing!;
+    if (placing.free) {
+      if (dist(pos, { x: placing.lastX ?? placing.startX, y: placing.lastY ?? placing.startY }) < 2) return;
+      const pt = this.exactPoint(pos);
+      if (!pt) return;
+      placing.pts = [...placing.pts!, pt];
+      placing.lastX = pos.x;
+      placing.lastY = pos.y;
+      this.proPreview(placing.pts);
+      return;
+    }
+    const pt = this.pointFor(pos, shiftKey, null);
+    if (pt) this.proPreview([...placing.pts!, pt]);
+  }
+
+  private proPlacementRelease(pos: Pt | null, shiftKey: boolean): void {
+    const placing = this.placing!;
+    if (placing.free) {
+      if (placing.pts!.length >= 2) this.commitPro(placing.pts!);
+      else this.cancelPlacement();
+      return;
+    }
+    if (!pos || dist(pos, { x: placing.startX, y: placing.startY }) < DRAG_COMMIT_THRESHOLD_PX) return;
+    const pt = this.pointFor(pos, shiftKey, null);
+    if (pt) this.addProPoint(pos, pt);
+  }
+
+  private finishMulti(): void {
+    const pts = this.placing?.pts ?? [];
+    // A double-click's two clicks add the same point twice.
+    const unique = pts.filter((p, i) => i === 0 || p.time !== pts[i - 1]!.time || p.price !== pts[i - 1]!.price);
+    if (unique.length >= 2) this.commitPro(unique);
+    else this.cancelPlacement();
+  }
+
+  private commitPro(pts: DataPoint[], extra: Partial<DrawingLine> = {}): void {
+    const tool = this.tool as ProToolId;
+    if (tool === "zoom") {
+      this.zoomTo(pts);
+      return;
+    }
+    let d = this.proDraft(tool, pts, extra);
+    if (tool === "bars-pattern") {
+      const captured = this.capturePattern(d);
+      if (!captured) {
+        this.cancelPlacement();
+        return;
+      }
+      d = captured;
+    }
+    this.commitDrawing(d);
+  }
+
+  /** Bars pattern: copy the bars between the two clicks; the copy then moves by its first bar. */
+  private capturePattern(d: DrawingLine): DrawingLine | null {
+    const [a, b] = d.points ?? [];
+    if (!a || !b) return null;
+    const lo = Math.min(a.time, b.time);
+    const hi = Math.max(a.time, b.time);
+    const bars = this.series
+      .data()
+      .map((bar) => ({ time: bar.time as number, ohlc: asOhlc(bar) }))
+      .filter((x) => x.ohlc && x.time >= lo && x.time <= hi);
+    const first = bars[0];
+    if (!first?.ohlc) return null;
+    const base = first.ohlc.open;
+    const pattern = bars.map(({ time, ohlc }) => [
+      time - first.time,
+      ohlc!.open - base,
+      ohlc!.high - base,
+      ohlc!.low - base,
+      ohlc!.close - base,
+    ]);
+    const anchor = { time: first.time, price: base };
+    return { ...d, points: [anchor], time: anchor.time, price: anchor.price, pattern };
+  }
+
+  /** Zoom tool: show just the dragged time range. */
+  private zoomTo(pts: DataPoint[]): void {
+    const ctx = this.ctx();
+    const xs = pts.map((p) => timeToX(ctx, p.time)).filter((x): x is number => x !== null);
+    this.cancelPlacement();
+    if (xs.length === 2 && Math.abs(xs[0]! - xs[1]!) >= 4) {
+      const ts = this.chart.timeScale();
+      const from = ts.coordinateToLogical(Math.min(...xs));
+      const to = ts.coordinateToLogical(Math.max(...xs));
+      if (from !== null && to !== null) ts.setVisibleLogicalRange({ from, to });
+    }
+    this.tool = "none";
+    this.applyCursor(null);
+    this.cb.onToolFinished();
+  }
+
+  /** Body drag of a pro drawing: shift every point by the same time and pixel offset. */
+  private shiftPro(origin: DrawingLine, entry: ResolvedEntry, dx: number, dy: number): DrawingLine | null {
+    const points = origin.points ?? [];
+    const first = entry.pts?.[0];
+    if (points.length === 0 || !first) return null;
+    const moved = this.shiftPoint(first.x, first.y, dx, 0);
+    if (!moved) return null;
+    const dt = moved.time - points[0]!.time;
+    const next: DataPoint[] = [];
+    for (const p of points) {
+      const y = this.series.priceToCoordinate(p.price);
+      const price = y === null ? null : this.series.coordinateToPrice(y + dy);
+      if (price === null) return null;
+      next.push({ time: p.time + dt, price });
+    }
+    return { ...origin, points: next, time: next[0]!.time, price: next[0]!.price };
   }
 
   // ── Selection & dragging ───────────────────────────────────────────
@@ -781,6 +1012,13 @@ export class DrawingToolsManager {
   }
 
   private dragPoint(drag: DragState, pos: Pt, shiftKey: boolean): DrawingLine | null {
+    if (drag.hit.region.kind === "pt") {
+      const pt = this.pointFor(pos, shiftKey, null);
+      if (!pt) return null;
+      const points = [...(drag.origin.points ?? [])];
+      points[drag.hit.region.index] = pt;
+      return { ...drag.origin, points, time: points[0]!.time, price: points[0]!.price };
+    }
     if (drag.hit.region.kind !== "point") return null;
     const pt = this.pointFor(pos, shiftKey, this.dragAnchorPx(drag));
     if (!pt) return null;
@@ -798,6 +1036,7 @@ export class DrawingToolsManager {
     dx: number,
     dy: number,
   ): DrawingLine | null {
+    if (origin.type === "pro") return this.shiftPro(origin, entry, dx, dy);
     if (origin.type === "horizontal") {
       if (entry.y1 === null) return null;
       const price = this.series.coordinateToPrice(entry.y1 + dy);
@@ -906,6 +1145,14 @@ export class DrawingToolsManager {
   private anchorPoints(e: ResolvedEntry): Array<{ x: number; y: number } & DataPoint> {
     const d = e.d;
     const out: Array<{ x: number; y: number } & DataPoint> = [];
+    if (d.type === "pro") {
+      if (!hasHandles(d)) return out;
+      e.pts?.forEach((p, i) => {
+        const dp = d.points?.[i];
+        if (p.x !== null && p.y !== null && dp) out.push({ x: p.x, y: p.y, ...dp });
+      });
+      return out;
+    }
     if (e.x1 != null && e.y1 != null && d.time != null) {
       out.push({ x: e.x1, y: e.y1, time: d.time, price: d.price });
     }

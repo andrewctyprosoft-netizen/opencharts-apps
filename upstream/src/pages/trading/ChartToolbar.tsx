@@ -14,7 +14,6 @@ import {
   Equal,
   Info,
   Layers,
-  Layers3,
   type LucideIcon,
   Magnet,
   Maximize2,
@@ -47,6 +46,12 @@ import {
   TIMEFRAMES,
   type Timeframe,
 } from "./constants.ts";
+import { DexSearch } from "../../desktop/DexSearch.tsx";
+import { VenueBadge } from "../../desktop/VenueBadge.tsx";
+import { venueGroup, venueOf } from "../../../../adapters/venues.ts";
+
+/** OpenCharts Desktop patch: rows shown at once in the symbol picker. */
+const PICKER_ROWS = 150;
 import { ChartTemplatesMenu } from "./ChartTemplatesMenu.tsx";
 import { ReplayHUD } from "./ReplayHUD.tsx";
 import { getPipDigits } from "./utils.ts";
@@ -139,11 +144,17 @@ export function ChartToolbar({
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
   const [symbolFilter, setSymbolFilter] = useState("");
 
-  const filteredSymbols = symbols.filter(
-    (s) =>
-      s.name.toLowerCase().includes(symbolFilter.toLowerCase()) ||
-      (s.category || "").toLowerCase().includes(symbolFilter.toLowerCase()),
-  );
+  // OpenCharts Desktop patch: venue chips (Binance, OKX …, OANDA, DEX), venue
+  // names searchable ("okx btc"), and the list capped so 700+ pairs stay fast.
+  const [venueFilter, setVenueFilter] = useState<string | null>(null);
+  const venueGroups = [...new Set(symbols.map((s) => venueGroup(s)))];
+  const terms = symbolFilter.toLowerCase().split(/\s+/).filter(Boolean);
+  const filteredSymbols = symbols.filter((s) => {
+    if (venueFilter && venueGroup(s) !== venueFilter) return false;
+    const hay = `${s.name} ${s.displayName ?? ""} ${s.category ?? ""} ${venueOf(s).label}`.toLowerCase();
+    return terms.every((t) => hay.includes(t));
+  });
+  const shownSymbols = filteredSymbols.slice(0, PICKER_ROWS);
 
   // Spread in pips/points: (ask - bid) / pipSize. Previously this multiplied
   // by contractSize which produced a meaningless quote-currency-per-lot number
@@ -200,7 +211,7 @@ export function ChartToolbar({
                       No symbols match &ldquo;{symbolFilter}&rdquo;
                     </div>
                   ) : (
-                    filteredSymbols.map((s) => (
+                    shownSymbols.map((s) => (
                       <button
                         key={s.id || s.name}
                         onClick={() => {
@@ -219,9 +230,7 @@ export function ChartToolbar({
                             <span className="text-xs text-muted-foreground">{s.displayName}</span>
                           )}
                         </div>
-                        <span className="text-muted-foreground text-xs uppercase tracking-wide">
-                          {s.category || s.assetClass}
-                        </span>
+                        <VenueBadge symbol={s} />
                       </button>
                     ))
                   )}
@@ -230,16 +239,34 @@ export function ChartToolbar({
             </div>
 
             {/* Desktop: absolute dropdown */}
-            <div className="hidden md:block absolute top-full left-0 z-50 mt-1 w-64 bg-card border border-border rounded-lg shadow-xl overflow-hidden">
+            {/* OpenCharts Desktop patch: wider list with names, plus DEX pool search. */}
+            <div className="hidden md:block absolute top-full left-0 z-50 mt-1 w-96 bg-card border border-border rounded-lg shadow-xl overflow-hidden">
               <input
                 autoFocus
-                placeholder="Search symbols..."
+                placeholder="Search symbols, forex, metals or DEX tokens..."
                 value={symbolFilter}
                 onChange={(e) => setSymbolFilter(e.target.value)}
                 className="w-full px-3 py-2 text-sm border-b border-border bg-card"
               />
-              <div className="max-h-60 overflow-y-auto">
-                {filteredSymbols.map((s) => (
+              {venueGroups.length > 1 && (
+                <div className="flex flex-wrap gap-1 px-2 py-1.5 border-b border-border text-[11px]">
+                  {[null, ...venueGroups].map((g) => (
+                    <button
+                      key={g ?? "all"}
+                      data-venue-chip={g ?? "All"}
+                      onClick={() => setVenueFilter(g)}
+                      className={cn(
+                        "px-2 py-0.5 rounded",
+                        venueFilter === g ? "bg-primary text-primary-foreground" : "bg-secondary hover:bg-secondary/70 text-muted-foreground",
+                      )}
+                    >
+                      {g ?? "All"}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="max-h-[70vh] overflow-y-auto">
+                {shownSymbols.map((s) => (
                   <button
                     key={s.id || s.name}
                     onClick={() => {
@@ -252,10 +279,28 @@ export function ChartToolbar({
                       s.name === selectedSymbol && "bg-secondary",
                     )}
                   >
-                    <span className="font-medium">{s.name}</span>
-                    <span className="text-muted-foreground text-xs">{s.category}</span>
+                    <span className="flex flex-col items-start min-w-0">
+                      <span className="font-medium">{s.name}</span>
+                      {s.displayName && s.displayName !== s.name && (
+                        <span className="text-[11px] text-muted-foreground truncate max-w-[16rem]">{s.displayName}</span>
+                      )}
+                    </span>
+                    <VenueBadge symbol={s} />
                   </button>
                 ))}
+                {filteredSymbols.length > shownSymbols.length && (
+                  <div className="px-3 py-2 text-[11px] text-muted-foreground border-t border-border">
+                    {filteredSymbols.length - shownSymbols.length} more — type a coin or pick an exchange to narrow the list.
+                  </div>
+                )}
+                <DexSearch
+                  query={symbolFilter}
+                  onPick={(name) => {
+                    onSymbolChange(name);
+                    setShowSymbolSearch(false);
+                    setSymbolFilter("");
+                  }}
+                />
               </div>
             </div>
           </>
@@ -268,14 +313,14 @@ export function ChartToolbar({
           <span className="inline-flex items-center gap-1 px-1 md:px-1.5 py-0.5 rounded bg-[#0ecb81]/15 text-[#0ecb81] font-mono font-bold text-[12px] md:text-[13px] tabular-nums tracking-tight">
             {formatNumber(
               tick.bid,
-              symbolInfo?.tickSize ? String(symbolInfo.tickSize).split(".")[1]?.length || 2 : 5,
+              getPipDigits(symbolInfo, selectedSymbol), // OpenCharts Desktop patch: DEX tick sizes
             )}
           </span>
           <span className="text-muted-foreground text-[10px] font-medium">/</span>
           <span className="inline-flex items-center gap-1 px-1 md:px-1.5 py-0.5 rounded bg-[#f6465d]/15 text-[#f6465d] font-mono font-bold text-[12px] md:text-[13px] tabular-nums tracking-tight">
             {formatNumber(
               tick.ask,
-              symbolInfo?.tickSize ? String(symbolInfo.tickSize).split(".")[1]?.length || 2 : 5,
+              getPipDigits(symbolInfo, selectedSymbol), // OpenCharts Desktop patch: DEX tick sizes
             )}
           </span>
           <span className="text-muted-foreground text-[10px] font-medium ml-0.5 hidden md:inline">
@@ -533,13 +578,12 @@ function PluginsDropdown({
 const DRAWING_TOOLS = [
   { tool: "horizontal" as const, icon: Minus, label: "Horizontal Line", shortcut: "Alt+H" },
   { tool: "trendline" as const, icon: TrendingUp, label: "Trendline", shortcut: "Alt+T" },
-  { tool: "fibonacci" as const, icon: Layers, label: "Fibonacci", shortcut: "Alt+F" },
+  { tool: "fibonacci" as const, icon: Layers, label: "Fib Retracement & Extension", shortcut: "Alt+F" },
   { tool: "rectangle" as const, icon: Square, label: "Rectangle", shortcut: "Alt+R" },
   { tool: "ray" as const, icon: MoveUpRight, label: "Ray", shortcut: "" },
   { tool: "extended" as const, icon: Spline, label: "Extended Line", shortcut: "" },
   { tool: "vertical" as const, icon: MoveVertical, label: "Vertical Line", shortcut: "" },
   { tool: "channel" as const, icon: Equal, label: "Parallel Channel", shortcut: "" },
-  { tool: "fibextension" as const, icon: Layers3, label: "Fib Extension", shortcut: "" },
   { tool: "ellipse" as const, icon: Circle, label: "Ellipse", shortcut: "" },
   { tool: "arrow" as const, icon: ArrowRight, label: "Arrow", shortcut: "" },
   { tool: "triangle" as const, icon: Triangle, label: "Triangle", shortcut: "" },

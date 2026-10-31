@@ -1,4 +1,5 @@
 import type { DrawingLine, DrawingTool } from "../../../pages/trading/constants";
+import type { ProEnv } from "./pro/tools";
 
 /** A point in chart data space (unix-seconds time + price). */
 export interface DataPoint {
@@ -38,6 +39,9 @@ export interface ResolvedEntry {
   /** Third anchor (parallel channel offset line). */
   x3?: number | null;
   y3?: number | null;
+  /** OpenCharts Desktop patch: every anchor of a "pro" drawing, and what its tool may read. */
+  pts?: Array<{ x: number | null; y: number | null }>;
+  proEnv?: ProEnv;
   state: EntryState;
 }
 
@@ -56,6 +60,8 @@ export type PriceKey = "price" | "price2" | "price3" | "stopPrice" | "targetPric
  */
 export type HitRegion =
   | { kind: "point"; timeKey: TimeKey | null; priceKey: PriceKey | null }
+  /** OpenCharts Desktop patch: anchor `index` of a "pro" drawing's points. */
+  | { kind: "pt"; index: number }
   | { kind: "body" };
 
 export interface Hit {

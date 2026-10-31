@@ -1,7 +1,7 @@
 import { uid } from "../../lib/uid.ts";
 import type { Account, ClosedPosition, Fill, Order, Position, Symbol } from "../schemas.ts";
 import { DEMO_CHANNELS, publish } from "./bus.ts";
-import { getDemoSymbol } from "./instruments.ts";
+import { getDemoSymbol, usdPerQuote } from "./instruments.ts";
 
 /**
  * In-browser paper-trading engine. The single source of truth for the demo
@@ -190,7 +190,7 @@ function validateProtection(
 
 function notional(symbol: string, qty: number, price: number): number {
   const contractSize = getDemoSymbol(symbol)?.contractSize ?? 1;
-  return price * qty * contractSize;
+  return price * qty * contractSize * usdPerQuote(symbol);
 }
 
 function marginFor(symbol: string, qty: number, price: number): number {
@@ -200,7 +200,7 @@ function marginFor(symbol: string, qty: number, price: number): number {
 function pnlOf(pos: Position, price: number): number {
   const contractSize = getDemoSymbol(pos.symbolName)?.contractSize ?? 1;
   const dir = pos.side === "LONG" ? 1 : -1;
-  return (price - pos.entryPrice) * pos.quantity * contractSize * dir;
+  return (price - pos.entryPrice) * pos.quantity * contractSize * dir * usdPerQuote(pos.symbolName);
 }
 
 function recomputeEquity(): void {

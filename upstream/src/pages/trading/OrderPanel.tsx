@@ -17,6 +17,7 @@ import { DisconnectedTradingBanner } from "../../components/ConnectionIndicator.
 import type { PlaceOrderInput } from "../../services/schemas.ts";
 import { toast } from "../../services/toast.ts";
 import { formatCurrency, formatNumber, cn } from "../../lib/utils.ts";
+import { getPipDigits } from "./utils.ts";
 
 type ConfirmableOrder = PlaceOrderInput & { _submit: () => Promise<unknown> };
 
@@ -59,6 +60,12 @@ export function OrderPanel({
   onOrderSuccess,
 }: OrderPanelProps) {
   const isDemo = useAuthStore((s) => s.isDemo);
+  // OpenCharts Desktop patch: price decimals follow the instrument (was a fixed 5).
+  const tickSize = symbolInfo?.tickSize;
+  const priceDigits = getPipDigits(
+    { tickSize: typeof tickSize === "number" || typeof tickSize === "string" ? tickSize : undefined },
+    symbol,
+  );
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT" | "STOP">("MARKET");
   const [quantity, setQuantity] = useState(() => {
@@ -91,7 +98,8 @@ export function OrderPanel({
       toast.warning("Invalid Quantity", "Quantity must be a positive number");
       return;
     }
-    if (qty > 1000) {
+    // OpenCharts Desktop patch: crypto pairs trade in coins (contract size 1), so cheap coins need more than 1000.
+    if (qty > 1000 && symbolInfo?.contractSize !== 1) {
       toast.warning("Invalid Quantity", "Maximum quantity is 1000 lots");
       return;
     }
@@ -224,7 +232,7 @@ export function OrderPanel({
             className="text-xs"
           >
             <TrendingUp className="h-3 w-3 mr-1" />
-            BUY {tick ? formatNumber(tick.ask, 5) : ""}
+            BUY {tick ? formatNumber(tick.ask, priceDigits) : ""}
           </Button>
           <Button
             variant={side === "SELL" ? "sell" : "outline"}
@@ -233,7 +241,7 @@ export function OrderPanel({
             className="text-xs"
           >
             <TrendingDown className="h-3 w-3 mr-1" />
-            SELL {tick ? formatNumber(tick.bid, 5) : ""}
+            SELL {tick ? formatNumber(tick.bid, priceDigits) : ""}
           </Button>
         </div>
 
@@ -263,7 +271,10 @@ export function OrderPanel({
         {/* Quantity */}
         <div>
           <label className="text-[10px] text-muted-foreground uppercase tracking-wider">
-            Volume (lots)
+            {/* OpenCharts Desktop patch: crypto quantities are coins, not lots. */}
+            {symbolInfo?.contractSize === 1
+              ? `Quantity (${symbol.split(":").pop()?.replace(/(USDT|USDC|USD)$/, "") || "units"})`
+              : "Volume (lots)"}
           </label>
           <div className="flex items-center gap-1 mt-1">
             <button
@@ -314,7 +325,7 @@ export function OrderPanel({
               type="number"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
-              placeholder={tick ? formatNumber(side === "BUY" ? tick.ask : tick.bid, 5) : ""}
+              placeholder={tick ? formatNumber(side === "BUY" ? tick.ask : tick.bid, priceDigits) : ""}
               className="w-full mt-1 text-sm font-mono"
               step="0.00001"
             />

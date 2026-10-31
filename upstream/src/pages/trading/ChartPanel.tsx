@@ -33,6 +33,7 @@ import {
   playAlertBeep,
 } from "../../lib/chart-plugins/drawing-tools/line-alerts.ts";
 import { DrawingToolsManager } from "../../lib/chart-plugins/drawing-tools/manager.ts";
+import { linkVolumeSeries } from "../../lib/chart-plugins/drawing-tools/resolve.ts";
 import { CrosshairHighlightPrimitive } from "../../lib/chart-plugins/highlight-bar-crosshair/highlight-bar-crosshair.ts";
 import { SessionBreaks } from "../../lib/chart-plugins/session-breaks/session-breaks.ts";
 import { SessionHighlighting } from "../../lib/chart-plugins/session-highlighting/session-highlighting.ts";
@@ -63,6 +64,10 @@ import { DrawingToolRail } from "./DrawingToolRail.tsx";
 import { DRAWING_STYLES_EVENT, getStyleDefaults } from "./drawingStyles.ts";
 import { NewsOverlay } from "./NewsOverlay.tsx";
 import { ObjectTreePanel } from "./ObjectTreePanel.tsx";
+import { getAdapter } from "../../adapter/registry.ts";
+import { alertsStore } from "../../desktop/alerts-store.ts";
+import { isDesktopAdapter } from "../../desktop/is-desktop.ts";
+import { useAlertLines } from "../../desktop/useAlertLines.ts";
 import { useChallengeLevels } from "./useChallengeLevels.ts";
 import { useIndicators } from "./useIndicators.ts";
 import { useNewsOverlay } from "./useNewsOverlay.ts";
@@ -224,6 +229,9 @@ export interface ChartPanelProps {
   magnetMode?: MagnetMode;
   /** Keep the drawing tool armed after each placement. */
   stayInDrawingMode?: boolean;
+  /** OpenCharts Desktop patch: magnet and stay-in-drawing-mode toggles on the left rail. */
+  onCycleMagnet?: () => void;
+  onToggleStayInDrawingMode?: () => void;
   positions: Position[];
   orders: Order[];
   tick?: { bid: number; ask: number; timestamp: number };
@@ -1096,6 +1104,8 @@ export function ChartPanel({
   onRedoDrawing,
   magnetMode = "none",
   stayInDrawingMode = false,
+  onCycleMagnet,
+  onToggleStayInDrawingMode,
   positions,
   orders,
   tick,
@@ -1401,9 +1411,19 @@ export function ChartPanel({
     [pipDigits],
   );
 
+  // OpenCharts Desktop patch: in the desktop app a right-click alert is a stored price alert
+  // (any symbol, once or every time, listed in the Alerts tab) instead of an in-session line.
+  const desktopAlerts = isDesktopAdapter(getAdapter());
+  useAlertLines(candleSeriesRef, selectedSymbol, desktopAlerts);
+
   const handleAddAlert = useCallback(
     (price: number) => {
       const rounded = parseFloat(price.toFixed(pipDigits));
+      if (desktopAlerts) {
+        alertsStore.add(selectedSymbol, rounded, tick ? (tick.bid + tick.ask) / 2 : null);
+        toast.info("Alert set", `${selectedSymbol} crossing ${rounded}. Manage it in the Alerts tab below the chart.`);
+        return;
+      }
       onAddDrawing({
         id: crypto.randomUUID(),
         type: "horizontal",
@@ -1414,7 +1434,7 @@ export function ChartPanel({
       });
       toast.info("Alert set", `${selectedSymbol} at ${rounded}`);
     },
-    [onAddDrawing, pipDigits, timeframe, selectedSymbol],
+    [onAddDrawing, pipDigits, timeframe, selectedSymbol, desktopAlerts, tick],
   );
 
   useIndicators(chartRef, candleSeriesRef, chartData, activeIndicators, isDark);
@@ -1571,6 +1591,7 @@ export function ChartPanel({
       scaleMargins: { top: 0.85, bottom: 0 },
     });
     volumeSeriesRef.current = volumeSeries;
+    linkVolumeSeries(candleSeries, volumeSeries);
 
     // Subscribe to crosshair move for OHLCV legend
     chart.subscribeCrosshairMove((param) => {
@@ -2112,7 +2133,17 @@ export function ChartPanel({
       <div ref={containerRef} className="w-full h-full" onContextMenu={handleChartContextMenu} />
 
       {/* Left vertical tool rail (TradingView-style grouped flyouts) */}
-      <DrawingToolRail drawingTool={drawingTool} onDrawingTool={(t) => onDrawingToolSelect?.(t)} />
+      <DrawingToolRail
+        drawingTool={drawingTool}
+        onDrawingTool={(t) => onDrawingToolSelect?.(t)}
+        magnetMode={magnetMode}
+        onCycleMagnet={onCycleMagnet}
+        stayInDrawingMode={stayInDrawingMode}
+        onToggleStayInDrawingMode={onToggleStayInDrawingMode}
+        drawings={drawings}
+        onUpdateDrawing={onUpdateDrawing}
+        onClearDrawings={onClearDrawings}
+      />
     </div>
   );
 }

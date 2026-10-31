@@ -13,13 +13,14 @@ import {
   TrendingUp,
   X,
 } from "lucide-react";
+import { proLabel } from "../../lib/chart-plugins/drawing-tools/pro/index.ts";
 import { cn } from "../../lib/utils.ts";
 import type { DrawingLine } from "./constants.ts";
 
 const TYPE_META: Record<string, { icon: LucideIcon; label: string }> = {
   trendline: { icon: TrendingUp, label: "Trendline" },
   horizontal: { icon: Minus, label: "Horizontal" },
-  fibonacci: { icon: Layers, label: "Fibonacci" },
+  fibonacci: { icon: Layers, label: "Fib retracement & extension" },
   rectangle: { icon: Square, label: "Rectangle" },
   position: { icon: TrendingUp, label: "Position" },
 };
@@ -79,7 +80,7 @@ function ObjectTreeRow({
   onRemove: (id: string) => void;
   onReorder: (d: DrawingLine, dir: "front" | "back") => void;
 }) {
-  const meta = TYPE_META[d.type] ?? { icon: Minus, label: d.type };
+  const meta = TYPE_META[d.type] ?? { icon: Minus, label: proLabel(d) ?? d.type };
   const Icon = meta.icon;
   const tfOnly = d.visibility === "tf" && d.createdTf !== currentTf;
   return (

@@ -93,7 +93,7 @@ export function TradingPage() {
   // ── Layout state ──
   const [showIndicatorMenu, setShowIndicatorMenu] = useState(false);
   const [bottomTab, setBottomTab] = useState<
-    "positions" | "orders" | "history" | "journal" | "calendar" | "news"
+    "positions" | "orders" | "history" | "alerts" | "journal" | "calendar" | "news"
   >("positions");
   const [rightPanel, setRightPanel] = useState<
     "order" | "dom" | "watchlist" | "news" | "tv-analysis"
@@ -228,6 +228,10 @@ export function TradingPage() {
               onRedoDrawing={redoDrawing}
               magnetMode={chartPrefs.magnetMode}
               stayInDrawingMode={chartPrefs.stayInDrawingMode}
+              onCycleMagnet={cycleMagnetMode}
+              onToggleStayInDrawingMode={() =>
+                updateChartPreferences({ stayInDrawingMode: !chartPrefs.stayInDrawingMode })
+              }
               positions={chartPositions}
               orders={chartOrders}
               tick={replayCandles ? undefined : tick}

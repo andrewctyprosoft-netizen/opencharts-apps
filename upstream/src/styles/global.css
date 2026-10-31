@@ -129,6 +129,25 @@
   @apply bg-muted-foreground/40;
 }
 
+/* OpenCharts Desktop patch: the dashboard windows' tables are wider than the window, so their
+   scrollbars must be easy to see and grab. */
+.dash-window ::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.dash-window ::-webkit-scrollbar-track {
+  @apply bg-secondary/60;
+}
+.dash-window ::-webkit-scrollbar-thumb {
+  @apply bg-muted-foreground/50 rounded-full border-2 border-solid border-transparent bg-clip-padding;
+}
+.dash-window ::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/80;
+}
+.dash-window ::-webkit-scrollbar-corner {
+  @apply bg-secondary/60;
+}
+
 /* ─── Glow Effects ───────────────────────────────────────── */
 .glow-buy {
   text-shadow: 0 0 8px hsl(var(--buy) / 0.4);

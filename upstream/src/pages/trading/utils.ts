@@ -10,15 +10,26 @@ export function getPipDigits(
 ): number {
   const symbolDecimals = _symbolNameDecimals(symbolName);
   if (symbolInfo?.tickSize) {
-    const s = String(symbolInfo.tickSize);
-    const tickDecimals = s.includes(".")
-      ? s.split(".")[1]!.replace(/0+$/, "").length || s.split(".")[1]!.length
-      : 0;
+    // OpenCharts Desktop patch: count decimals numerically. String() gives
+    // "1e-7" (no decimal point) for the tiny tick sizes of DEX tokens, and
+    // toFixed(20) exposes float noise ("0.00100000000000000002").
+    const tickDecimals = tickSizeDecimals(Number(symbolInfo.tickSize));
     // Use the higher of tick-derived or symbol-name-derived so forex pairs
     // (tickSize=0.0001) still show 5 decimal places instead of 4.
     return Math.max(tickDecimals, symbolDecimals, 2);
   }
   return symbolDecimals;
+}
+
+/** Decimal places of a tick size (0.25 → 2, 0.001 → 3, 1e-10 → 10), at most 12. */
+export function tickSizeDecimals(tickSize: number): number {
+  if (!Number.isFinite(tickSize) || tickSize <= 0) return 0;
+  for (let d = 0; d < 12; d++) {
+    const scaled = tickSize * 10 ** d;
+    const whole = Math.round(scaled);
+    if (whole >= 1 && Math.abs(scaled - whole) < 1e-6 * whole) return d;
+  }
+  return 12;
 }
 
 function _symbolNameDecimals(symbolName?: string): number {

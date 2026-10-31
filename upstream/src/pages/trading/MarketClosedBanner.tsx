@@ -126,7 +126,8 @@ export function MarketClosedBanner({ symbolInfo }: Props) {
   if (!symbolInfo) return null;
 
   const category: string = symbolInfo.category ?? "";
-  if (category.toUpperCase() === "CRYPTO") return null;
+  // OpenCharts Desktop patch: DEX pools trade around the clock too.
+  if (category.toUpperCase() === "CRYPTO" || category.toUpperCase() === "DEX") return null;
 
   // If the feed is actively delivering ticks for this symbol, the market is open.
   // `now` ticks once a second; using it (instead of reading the clock during

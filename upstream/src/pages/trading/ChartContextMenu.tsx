@@ -95,7 +95,7 @@ function TradeSection({
       {onAddAlert && (
         <MenuItem
           icon={<Bell className="h-3.5 w-3.5" />}
-          label={`Add alert on ${symbol} at ${p}`}
+          label={`Set alert on ${symbol} at ${p}`}
           onClick={() => {
             onAddAlert(price);
             onClose();

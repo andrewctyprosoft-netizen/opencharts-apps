@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { BookOpen, Clock, Globe, History, Newspaper, TrendingUp } from "lucide-react";
+import { Bell, BookOpen, Clock, Globe, History, Newspaper, TrendingUp } from "lucide-react";
+import { getAdapter } from "../../adapter/registry.ts";
+import { useAlerts } from "../../desktop/alerts-store.ts";
+import { isDesktopAdapter } from "../../desktop/is-desktop.ts";
+import { TerminalAlerts } from "../../desktop/TerminalAlerts.tsx";
 import { useAuthStore } from "../../services/store.tsx";
 import { useTradingStore } from "../../services/store.tsx";
 import {
@@ -38,9 +42,9 @@ function getErrorMessage(error: unknown): string {
 }
 
 export interface BottomPanelProps {
-  tab: "positions" | "orders" | "history" | "journal" | "calendar" | "news";
+  tab: "positions" | "orders" | "history" | "alerts" | "journal" | "calendar" | "news";
   onTabChange: (
-    t: "positions" | "orders" | "history" | "journal" | "calendar" | "news",
+    t: "positions" | "orders" | "history" | "alerts" | "journal" | "calendar" | "news",
   ) => void;
   positions: Position[];
   orders: Order[];
@@ -171,6 +175,8 @@ export function BottomPanel({
   const pendingOrders = orders.filter(
     (order) => order.status === "PENDING" || order.status === "NEW",
   );
+  const desktop = isDesktopAdapter(getAdapter());
+  const activeAlerts = useAlerts().alerts.filter((a) => a.status === "active").length;
   const totalPnl = openPositions.reduce((sum, position) => sum + (position.unrealizedPnl || 0), 0);
 
   const tabs: {
@@ -182,6 +188,8 @@ export function BottomPanel({
     { key: "positions", label: "Positions", icon: TrendingUp, count: openPositions.length },
     { key: "orders", label: "Orders", icon: Clock, count: pendingOrders.length },
     { key: "history", label: "Trade History", icon: History },
+    // OpenCharts Desktop patch: price alerts (right-click the chart › Set alert).
+    ...(desktop ? [{ key: "alerts" as const, label: "Alerts", icon: Bell, count: activeAlerts }] : []),
     { key: "journal", label: "Journal", icon: BookOpen, count: journalEntries.length },
     { key: "calendar", label: "Calendar", icon: Globe },
     { key: "news", label: "News", icon: Newspaper },
@@ -262,6 +270,7 @@ export function BottomPanel({
           />
         )}
         {tab === "history" && <TradeHistoryTable accountId={accountId} />}
+        {tab === "alerts" && desktop && <TerminalAlerts />}
         {tab === "journal" && (
           <TradeJournalPanel
             entries={journalEntries}

@@ -1,8 +1,12 @@
 import type { IChartApi, ISeriesApi, Logical, SeriesOptionsMap, Time } from "lightweight-charts";
 import type { DrawingLine } from "../../../pages/trading/constants";
+import type { ProBar, ProEnv } from "./pro/tools";
 import type { EntryState, ResolvedEntry, ResolvedFibLevel } from "./types";
 
-export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
+// OpenCharts Desktop patch: retracement and trend-based extension are one tool, so the default
+// levels run past 1 into the extension levels (as in TradingView's fib retracement).
+export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.618, 2.618] as const;
+/** Levels of older "fibextension" drawings, which still render. */
 export const FIB_EXT_LEVELS = [0, 0.618, 1, 1.618, 2.618] as const;
 export const FIB_COLORS = [
   "#e91e63",
@@ -12,6 +16,11 @@ export const FIB_COLORS = [
   "#4caf50",
   "#2196F3",
   "#9c27b0",
+  // OpenCharts Desktop patch: colours for the extension levels (1.272, 1.618, 2.618, then custom).
+  "#00bcd4",
+  "#3f51b5",
+  "#f44336",
+  "#795548",
 ];
 
 export type AnySeries = ISeriesApi<keyof SeriesOptionsMap>;
@@ -27,6 +36,16 @@ export interface ResolveCtx {
   series: AnySeries;
   intervalSec: number;
   data: readonly { time: Time }[];
+  /** OpenCharts Desktop patch: bars with volume, built on first use in this pass. */
+  barsCache?: ProBar[];
+}
+
+// OpenCharts Desktop patch: series.data() drops extra fields such as volume, so the chart
+// links its volume series to the candle series for the volume-based drawing tools.
+const volumeSeriesOf = new WeakMap<object, AnySeries>();
+
+export function linkVolumeSeries(candles: AnySeries, volume: AnySeries): void {
+  volumeSeriesOf.set(candles, volume);
 }
 
 export function makeResolveCtx(
@@ -99,6 +118,24 @@ function timeToLogical(ctx: ResolveCtx, time: number): number | null {
 }
 
 /**
+ * OpenCharts Desktop patch: X coordinate → time between bars (free-hand strokes), interpolated
+ * from the fractional bar index instead of snapping to the nearest bar.
+ */
+export function xToTimeExact(ctx: ResolveCtx, x: number): number | null {
+  const { data, intervalSec } = ctx;
+  const logical = ctx.chart.timeScale().coordinateToLogical(x);
+  if (logical === null || data.length === 0 || intervalSec <= 0) return xToTime(ctx, x);
+  const last = data.length - 1;
+  const tAt = (i: number): number => {
+    if (i < 0) return (data[0]!.time as number) + i * intervalSec;
+    if (i > last) return (data[last]!.time as number) + (i - last) * intervalSec;
+    return data[i]!.time as number;
+  };
+  const lo = Math.floor(logical);
+  return tAt(lo) + (logical - lo) * (tAt(lo + 1) - tAt(lo));
+}
+
+/**
  * X coordinate → time. Falls back to bar-interval extrapolation in the
  * whitespace beyond the loaded data so anchors can be placed in the future.
  */
@@ -145,7 +182,52 @@ export function resolveEntry(d: DrawingLine, ctx: ResolveCtx, state: EntryState)
     entry.x3 = d.time3 != null ? timeToX(ctx, d.time3) : null;
     entry.y3 = d.price3 != null ? ctx.series.priceToCoordinate(d.price3) : null;
   }
+  if (d.type === "pro") {
+    entry.pts = (d.points ?? []).map((p) => ({
+      x: timeToX(ctx, p.time),
+      y: ctx.series.priceToCoordinate(p.price),
+    }));
+    entry.proEnv = proEnv(d, ctx, state);
+  }
   return entry;
+}
+
+// ── OpenCharts Desktop patch: what the extra tools may read about the chart ──
+
+function proBars(ctx: ResolveCtx): readonly ProBar[] {
+  if (ctx.barsCache) return ctx.barsCache;
+  const volumes = new Map<number, number>();
+  const volumeSeries = volumeSeriesOf.get(ctx.series);
+  for (const v of volumeSeries?.data() ?? []) {
+    const value = (v as { value?: number }).value;
+    if (typeof value === "number") volumes.set(v.time as number, value);
+  }
+  ctx.barsCache = ctx.data.flatMap((bar) => {
+    const b = bar as { time: Time; open?: number; high?: number; low?: number; close?: number };
+    if (typeof b.open !== "number" || typeof b.high !== "number" || typeof b.low !== "number" || typeof b.close !== "number") {
+      return [];
+    }
+    const time = b.time as number;
+    return [{ time, open: b.open, high: b.high, low: b.low, close: b.close, volume: volumes.get(time) ?? 0 }];
+  });
+  return ctx.barsCache;
+}
+
+function proEnv(d: DrawingLine, ctx: ResolveCtx, state: EntryState): ProEnv {
+  const formatter = ctx.series.priceFormatter();
+  const minMove = (ctx.series.options().priceFormat as { minMove?: number } | undefined)?.minMove;
+  return {
+    width: ctx.chart.timeScale().width(),
+    height: ctx.chart.paneSize().height,
+    fmt: (p) => formatter.format(p),
+    priceToY: (p) => ctx.series.priceToCoordinate(p),
+    timeToX: (t) => timeToX(ctx, t),
+    intervalSec: ctx.intervalSec,
+    minMove: minMove && minMove > 0 ? minMove : 0.01,
+    bars: () => proBars(ctx),
+    data: d.points ?? [],
+    active: state !== "normal",
+  };
 }
 
 // Δprice / % / bar-count readout shown while drawing or selected (TV-style).

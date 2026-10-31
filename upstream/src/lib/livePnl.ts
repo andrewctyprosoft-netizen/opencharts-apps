@@ -1,3 +1,4 @@
+import { usdPerQuote } from "../services/demo/instruments.ts";
 import type { Position } from "../services/schemas";
 
 export interface LiveTick {
@@ -24,7 +25,8 @@ export function computeLivePnl(p: Position, tick?: LiveTick): number {
   if (Math.abs(snapDelta) < 1e-12) {
     const contractSize = p.contractSize ?? 1;
     const direction = p.side === "LONG" ? 1 : -1;
-    return (livePrice - p.entryPrice) * p.quantity * contractSize * direction;
+    // OpenCharts Desktop patch: book non-USD quote currencies in USD.
+    return (livePrice - p.entryPrice) * p.quantity * contractSize * direction * usdPerQuote(p.symbolName);
   }
 
   const perPriceUnit = p.unrealizedPnl / snapDelta;

@@ -113,7 +113,11 @@ export function mergeChartColors(theme: ChartColors, overrides: ChartColorOverri
  * "long-position"/"short-position" store a "position" with `side`; "measure" is
  * a transient gesture that never commits.
  */
+// OpenCharts Desktop patch: the extra TradingView tools (stored as type "pro").
+import type { ProToolId } from "../../lib/chart-plugins/drawing-tools/pro/catalog";
+
 export type DrawingTool =
+  | ProToolId
   | "none"
   | "trendline"
   | "horizontal"
@@ -134,10 +138,9 @@ export type DrawingTool =
   | "measure";
 
 /** Stored drawing kinds (excludes placement-only aliases). */
-export type DrawingType = Exclude<
-  DrawingTool,
-  "none" | "ray" | "extended" | "long-position" | "short-position" | "measure"
->;
+export type DrawingType =
+  | Exclude<DrawingTool, ProToolId | "none" | "ray" | "extended" | "long-position" | "short-position" | "measure">
+  | "pro";
 
 export type DrawingLineStyle = "solid" | "dashed" | "dotted";
 
@@ -206,6 +209,15 @@ export interface DrawingLine {
   /** When set, the platform alerts when price crosses this line. */
   alertEnabled?: boolean;
   alertMessage?: string;
+  // ── OpenCharts Desktop patch: extra TradingView tools (type "pro") ──
+  /** Which extra tool a "pro" drawing is. */
+  tool?: ProToolId;
+  /** All anchors of a "pro" drawing; price/time mirror the first one. */
+  points?: { time: number; price: number }[];
+  /** Polyline closed into a shape. */
+  closed?: boolean;
+  /** Bars pattern: copied bars as [Δtime s, open, high, low, close], relative to the first anchor. */
+  pattern?: number[][];
 }
 
 /** Swatch palette for the floating drawing toolbar (TradingView-style). */

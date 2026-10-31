@@ -1,0 +1,31 @@
+{
+  "name": "opencharts-android",
+  "productName": "OpenCharts",
+  "version": "0.6.0",
+  "description": "Android trading-chart app: live crypto from Binance, OKX, Bybit, KuCoin, Coinbase and MEXC, DEX pools on every chain, forex and spot gold, real trading through exchange API keys, price alerts with phone notifications, portfolio and market overview dashboards, 80+ TradingView-style drawing tools, indicators and paper trading (OpenCharts in Capacitor).",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:web": "node dev/tools/build-web.mjs",
+    "dev": "npm --prefix ../upstream run dev -- --mode mobile --port 5180",
+    "test": "node dev/tools/build-bridge.mjs --test && node --test \"dev/tests/*.test.mjs\"",
+    "sync": "node dev/tools/build-web.mjs && npx cap sync android",
+    "apk": "node dev/tools/build-apk.mjs",
+    "smoke": "node dev/tools/smoke-android.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "buffer": "^6.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
+    "esbuild": "^0.28.2"
+  }
+}

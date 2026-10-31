@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'" />
+    <title>OANDA token</title>
+    <!-- The bridge, shared with the terminal window (window.ocDesktop.settings). -->
+    <script src="./bridge.js"></script>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      body { margin: 0; padding: 18px 16px 40px; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #0a0a0a; color: #e6e8ec; }
+      h1 { font-size: 18px; margin: 0 0 6px; }
+      p { margin: 0 0 12px; color: #a3a8b3; }
+      ol { margin: 0 0 16px; padding-left: 20px; color: #a3a8b3; }
+      li { margin-bottom: 4px; }
+      a { color: #2dd4bf; }
+      label { display: block; margin: 14px 0 6px; font-weight: 600; font-size: 14px; }
+      .row { display: flex; gap: 8px; }
+      .row label { flex: 1; font-weight: 500; margin: 0; display: flex; gap: 8px; align-items: center; justify-content: center; height: 46px; border-radius: 12px; border: 1px solid #2a2f3a; background: #111318; }
+      .row label:has(input:checked) { border-color: #14b8a6; color: #2dd4bf; }
+      .row input { width: 18px; height: 18px; }
+      input[type="password"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #2a2f3a; background: #111318; color: inherit; font-family: ui-monospace, Consolas, monospace; font-size: 16px; }
+      input[type="password"]:focus { outline: none; border-color: #14b8a6; }
+      .actions { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+      button { height: 48px; border-radius: 12px; border: 1px solid #2a2f3a; background: #1b1f27; color: inherit; font: inherit; font-weight: 600; }
+      button.primary { background: #14b8a6; border-color: #14b8a6; color: #04130f; }
+      button:disabled { opacity: 0.5; }
+      #status { min-height: 22px; margin-top: 14px; }
+      .ok { color: #34d399; } .err { color: #f87171; }
+    </style>
+  </head>
+  <body>
+    <h1>Forex &amp; gold prices (OANDA)</h1>
+    <p>Optional. Forex and gold already work without it, from Swissquote and Yahoo Finance. With a token, spot XAU/USD, XAG/USD and the forex pairs come from OANDA, and orders on them go to your OANDA account.</p>
+    <ol>
+      <li>Open a free practice account at <a href="https://www.oanda.com/" target="_blank">oanda.com</a>.</li>
+      <li>In the account portal open <b>Manage API Access</b> and generate a token.</li>
+      <li>Paste it below. It is checked with OANDA, then stored encrypted on this phone.</li>
+    </ol>
+    <label>Account type</label>
+    <div class="row">
+      <label><input type="radio" name="env" value="practice" checked /> Practice (demo)</label>
+      <label><input type="radio" name="env" value="live" /> Live</label>
+    </div>
+    <label for="token">API token</label>
+    <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="xxxxxxxx-xxxxxxxx" />
+    <div class="actions">
+      <button id="save" class="primary">Save and connect</button>
+      <button id="remove">Remove token</button>
+    </div>
+    <div id="status"></div>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const status = (text, cls) => { $("status").textContent = text; $("status").className = cls || ""; };
+      const api = window.ocDesktop.settings;
+      const env = new URLSearchParams(location.search).get("env");
+      if (env) document.querySelector(`input[value="${env === "live" ? "live" : "practice"}"]`).checked = true;
+      if (new URLSearchParams(location.search).get("configured") === "1") status("A token is saved. Paste a new one to replace it.");
+
+      $("save").onclick = async () => {
+        $("save").disabled = true;
+        status("Checking with OANDA…");
+        const chosen = document.querySelector('input[name="env"]:checked').value;
+        const r = await api.saveOandaToken($("token").value, chosen);
+        $("save").disabled = false;
+        if (r.ok) {
+          $("token").value = "";
+          status(`Connected to account ${r.accountId}. Go back to load forex and metals from OANDA.`, "ok");
+        } else {
+          status(r.error, "err");
+        }
+      };
+      $("remove").onclick = async () => { await api.clearOandaToken(); status("Token removed. Go back to use the free forex feed."); };
+    </script>
+  </body>
+</html>

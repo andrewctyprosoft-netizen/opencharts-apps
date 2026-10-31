@@ -1,0 +1,20 @@
+{
+  "appId": "com.thrivelab.opencharts",
+  "appName": "OpenCharts",
+  "webDir": "www",
+  "backgroundColor": "#0a0a0a",
+  "android": {
+    "backgroundColor": "#0a0a0a",
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_alert",
+      "iconColor": "#14b8a6"
+    },
+    "SystemBars": {
+      "insetsHandling": "css",
+      "style": "DARK"
+    }
+  }
+}

@@ -42,7 +42,7 @@ Orders go to an exchange only when its API key is saved and you confirm the orde
 
 ## Usage
 
-1. Download `OpenCharts-0.6.1-portable.exe` from the [Releases](../../../releases/latest) page (or build it, below) and double-click it. Copy it anywhere; it is one self-contained file.
+1. Download `OpenCharts-0.6.2-portable.exe` from the [Releases](../../../releases/latest) page (or build it, below) and double-click it. Copy it anywhere; it is one self-contained file.
 2. Click the symbol name (top left) to switch markets. Type to filter, for example `okx btc`, `gold`, `EUR` or `pepe`, or click an exchange chip.
 
 Forex and gold work with no setup.

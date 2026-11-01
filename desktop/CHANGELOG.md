@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.2 — 2026-11-01
 
 - **Market overview: one Crypto tab for centralised and decentralised markets.** Crypto, Crypto pairs and DEX are merged. Each of the 1,000 coins shows the exchanges listing it, its DEX liquidity and 24h volume across eleven chains (DexScreener, matched by contract address), and the gap between its DEX and exchange prices. Click a coin's name to see every exchange pair and its most liquid DEX pools, each with a Chart button. Trending GeckoTerminal pools whose token is not among the coins appear as "DEX only" rows, with instant day lines from their reported 24 h, 6 h, 1 h, 30, 15 and 5-minute changes. A DEX pool's Chart button adds the pool to the symbol list and charts it in the main window.
 - **Fixed: a blank chart after switching to a slow-loading symbol.** While the new symbol's bars loaded, the chart showed the previous symbol's bars under the new name, then treated the real bars as a refresh and kept the old view, so it stayed blank until the timeframe changed. Now the chart empties on the switch and draws the new symbol as soon as its bars arrive; most visible with DEX pools, whose bars can take half a minute when GeckoTerminal is busy.

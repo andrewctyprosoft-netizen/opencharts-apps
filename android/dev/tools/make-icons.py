@@ -91,6 +91,10 @@ def main() -> None:
     (RES / "drawable" / "ic_launcher_foreground.xml").write_text(vector_foreground(), encoding="utf-8")
     for old in RES.glob("mipmap-*/ic_launcher_foreground.png"):
         old.unlink()
+    # Capacitor's template icon: drawable-v24 wins over drawable/ on Android 7+, so the
+    # launcher showed the Capacitor logo instead of ours while it was there.
+    for old in (RES / "drawable-v24" / "ic_launcher_foreground.xml", RES / "drawable" / "ic_launcher_background.xml"):
+        old.unlink(missing_ok=True)
     adaptive = (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'

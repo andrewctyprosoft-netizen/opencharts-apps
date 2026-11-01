@@ -101,7 +101,7 @@ for (const scenario of wanted) {
       OC_SMOKE_TICKS_OPTIONAL: forexClosed() ? "1" : "0",
     });
   }
-  const { code, text } = await runApp(env, ["draw", "dash"].includes(scenario) ? 400_000 : 150_000);
+  const { code, text } = await runApp(env, ["draw", "dash"].includes(scenario) ? 640_000 : 150_000);
   fake?.close();
   const line = text.split(/\r?\n/).find((l) => l.startsWith("SMOKE "));
   console.log(`[${scenario}] ${line ?? `no result (exit ${code}) ${text.slice(-800)}`}`);

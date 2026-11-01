@@ -144,4 +144,6 @@ export interface DesktopMarketData extends MarketDataSource {
   addDex(pool: DexPool): Promise<string>;
   removeDex(name: string): Promise<void>;
   savedDexName(pool: Pick<DexPool, "network" | "address">): string | null;
+  /** The symbol name of a pool, added first when it is not saved yet; null if GeckoTerminal does not know it. */
+  openDex(network: string, address: string): Promise<string | null>;
 }

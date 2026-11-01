@@ -42,6 +42,8 @@ test("geckoUrl only allows GeckoTerminal pool and search paths", () => {
   assert.equal(geckoUrl("/search/pools?query=pepe"), "https://api.geckoterminal.com/api/v2/search/pools?query=pepe");
   assert.ok(geckoUrl("/networks/polygon_pos/pools/multi/0x1,0x2"));
   assert.ok(geckoUrl("/networks/eth/pools/0xabc/ohlcv/minute?aggregate=1"));
+  assert.ok(geckoUrl("/networks/trending_pools?include=base_token&page=2"));
+  assert.equal(geckoUrl("/networks/trending_pools/../../x"), null);
   assert.equal(geckoUrl("https://evil.example/"), null);
   assert.equal(geckoUrl("//evil.example/search/pools"), null);
   assert.equal(geckoUrl("/networks/eth/pools/../../x"), null);
@@ -137,6 +139,9 @@ test("normalizeSettings keeps exchange switches and encrypted keys for known exc
 test("publicGetUrl allows listed hosts and paths only", () => {
   assert.ok(publicGetUrl("https://www.okx.com/api/v5/market/tickers?instType=SPOT"));
   assert.ok(publicGetUrl("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd"));
+  assert.ok(publicGetUrl("https://api.coingecko.com/api/v3/coins/list?include_platform=true"));
+  assert.ok(publicGetUrl("https://api.dexscreener.com/token-pairs/v1/solana/So11111111111111111111111111111111111111112"));
+  assert.equal(publicGetUrl("https://api.coingecko.com/api/v3/coins/bitcoin/history"), null);
   assert.equal(publicGetUrl("https://api.binance.com/api/v3/account"), null);
   assert.equal(publicGetUrl("https://api.coinbase.com/api/v3/brokerage/accounts"), null);
   assert.equal(publicGetUrl("http://api.binance.com/api/v3/klines"), null);

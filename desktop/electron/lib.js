@@ -82,11 +82,11 @@ export const PUBLIC_GET = {
   "api.exchange.coinbase.com": ["/products"],
   "api.coinbase.com": ["/api/v3/brokerage/market/"],
   "api.mexc.com": ["/api/v3/ticker/", "/api/v3/klines", "/api/v3/exchangeInfo"],
-  "api.coingecko.com": ["/api/v3/coins/markets"],
+  "api.coingecko.com": ["/api/v3/coins/markets", "/api/v3/coins/list"],
   "query1.finance.yahoo.com": ["/v8/finance/spark", "/v1/finance/screener/predefined/saved"],
   "api.ethplorer.io": ["/getAddressInfo/"],
   "mempool.space": ["/api/address/"],
-  "api.dexscreener.com": ["/tokens/v1/"],
+  "api.dexscreener.com": ["/tokens/v1/", "/token-pairs/v1/"],
   "lite-api.jup.ag": ["/price/v3", "/tokens/v2/search"],
 };
 
@@ -180,7 +180,7 @@ export const GECKO_BASE = "https://api.geckoterminal.com/api/v2";
  */
 export function geckoUrl(p) {
   if (typeof p !== "string" || !p.startsWith("/") || p.startsWith("//") || p.length > 2000) return null;
-  if (!/^\/(search\/pools|networks\/[a-z0-9_-]+\/pools\/)/.test(p)) return null;
+  if (!/^\/(search\/pools|networks\/[a-z0-9_-]+\/pools\/|networks\/(trending|new)_pools\?)/.test(p)) return null;
   if (p.includes("..") || /[\s\\]/.test(p)) return null;
   return GECKO_BASE + p;
 }

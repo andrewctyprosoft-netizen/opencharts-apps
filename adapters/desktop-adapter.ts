@@ -194,6 +194,15 @@ export async function createDesktopAdapter(bridge: DesktopBridge): Promise<Deskt
       symbolsChanged();
     },
     savedDexName: (pool) => gecko.savedName(pool),
+    openDex: async (network, address) => {
+      const saved = gecko.savedName({ network, address });
+      if (saved) return saved;
+      const pool = await gecko.lookup(network, address);
+      if (!pool) return null;
+      const name = gecko.add(pool);
+      symbolsChanged();
+      return name;
+    },
   };
 
   const paper = createDemoAdapter();

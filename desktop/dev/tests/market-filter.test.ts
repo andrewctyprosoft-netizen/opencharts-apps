@@ -7,14 +7,26 @@ import {
   changeOverDays,
   closesBetween,
   coingeckoUrl,
+  coinTokens,
+  dexChartId,
+  dexDayLine,
+  dexOnlyRow,
+  dexTotals,
   fxRows,
   pairRows,
+  pairsByBase,
   parseCoinSparks,
   parseCoins,
+  parseDexChartId,
+  parseDexRows,
   parseSpark,
   parseStocks,
   sparkPaths,
+  parseTokenPairs,
   sparkUrl,
+  tokenPairsUrl,
+  trendingPoolsPath,
+  withVenues,
 } from "../../../adapters/markets-data.ts";
 import {
   applyJupiter,
@@ -133,6 +145,152 @@ test("row charts: CoinGecko week line, windows, intraday specs and paths", () =>
   const pts = sparkPaths(long, 100, 20).line.split("L");
   assert.ok(pts.length <= 102);
   assert.equal(pts.at(-1), "100.0,2.0");
+});
+
+test("DEX rows: GeckoTerminal trending pools, chart ids", () => {
+  const addr = "0x03bfe47801f43332c4f79608e6765ebe15d1e1d80a546833da4569b9f5b1d8f8";
+  const reply = {
+    data: [
+      {
+        id: `robinhood_${addr}`,
+        type: "pool",
+        attributes: {
+          address: addr,
+          name: "BTC / WETH 0.3%",
+          base_token_price_usd: "0.0178",
+          pool_created_at: "2026-10-25T00:00:00Z",
+          fdv_usd: "17722685.64",
+          market_cap_usd: null,
+          reserve_in_usd: "397968.45",
+          price_change_percentage: { m5: "-2.1", m15: "-5.6", m30: "-3.5", h1: "2.07", h6: "-28.1", h24: "-32.3" },
+          transactions: { h24: { buys: 600, sells: 400 } },
+          volume_usd: { h24: "4008121.6" },
+        },
+        relationships: {
+          base_token: { data: { id: "robinhood_0xa5b5", type: "token" } },
+          quote_token: { data: { id: "robinhood_0x0000", type: "token" } },
+          network: { data: { id: "robinhood", type: "network" } },
+          dex: { data: { id: "uniswap-v4-robinhood", type: "dex" } },
+        },
+      },
+      { id: "eth_0xbad", type: "pool", attributes: { address: "0xbad", base_token_price_usd: "0" }, relationships: {} },
+    ],
+    included: [
+      { id: "robinhood_0xa5b5", type: "token", attributes: { symbol: "BTC" } },
+      { id: "robinhood", type: "network", attributes: { name: "Robinhood" } },
+      { id: "uniswap-v4-robinhood", type: "dex", attributes: { name: "Uniswap V4" } },
+    ],
+  };
+  const rows = parseDexRows(reply, 20, Date.parse("2026-11-01T00:00:00Z"));
+  assert.equal(rows.length, 1);
+  assert.deepEqual(
+    { ...rows[0] },
+    {
+      id: `dex:robinhood:${addr}`,
+      rank: 21,
+      pair: "BTC/WETH",
+      base: "BTC",
+      quote: "WETH",
+      network: "Robinhood",
+      dex: "Uniswap V4",
+      price: 0.0178,
+      change: null,
+      chg_5m: -2.1,
+      chg_15m: -5.6,
+      chg_30m: -3.5,
+      chg_1h: 2.07,
+      chg_6h: -28.1,
+      chg_1d: -32.3,
+      chg_1w: null,
+      chg_1m: null,
+      chg_1y: null,
+      volume: 4008121.6,
+      liquidity: 397968.45,
+      mcap: null,
+      fdv: 17722685.64,
+      txns: 1000,
+      buys: 60,
+      age: 7,
+      base_addr: "0xa5b5",
+      chart: `dex:robinhood:${addr}`,
+    },
+  );
+  assert.deepEqual(parseDexRows(null, 0), []);
+  // Day line: 24 h of 15-minute points through the known prices, ending at the price now.
+  const day = dexDayLine({ price: 100, chg_1d: 100, chg_6h: 0, chg_1h: null });
+  assert.equal(day.length, 97);
+  assert.equal(day[0], 50);
+  assert.equal(day[36], 50 + (50 * 36) / 72);
+  assert.equal(day[72], 100);
+  assert.equal(day.at(-1), 100);
+  assert.deepEqual(dexDayLine({ price: 100, chg_1d: null }), []);
+  assert.deepEqual(dexDayLine({ price: null, chg_1d: 5 }), []);
+  assert.deepEqual(parseDexChartId(dexChartId("solana", "So1aNaPoo1Address1111111111111111111111111")), {
+    network: "solana",
+    address: "So1aNaPoo1Address1111111111111111111111111",
+  });
+  assert.equal(parseDexChartId("BINANCE:BTCUSDT"), null);
+  assert.equal(parseDexChartId("dex:eth:../../x"), null);
+  assert.equal(trendingPoolsPath(3), "/networks/trending_pools?include=base_token,quote_token,dex,network&page=3");
+});
+
+test("merged crypto: tokens per coin, DEX pools, venues and DEX-only rows", () => {
+  const list = [
+    { id: "pepe", platforms: { ethereum: "0x6982508145454Ce325dDbE47a25d4ec3d2311933", "arbitrum-one": "0x25d8", celo: "0x1" } },
+    { id: "solana", platforms: {} },
+    { id: "bitcoin", platforms: {} },
+    { id: "nochain", platforms: { celo: "0x2" } },
+    { id: "unlisted", platforms: { ethereum: "0x3" } },
+  ];
+  const tokens = coinTokens(list, new Set(["pepe", "solana", "nochain"]));
+  // Supported chains only, in DEX_CHAINS order; natives as their wrapped token.
+  assert.deepEqual(tokens.get("pepe"), [
+    { chain: "ethereum", address: "0x6982508145454Ce325dDbE47a25d4ec3d2311933" },
+    { chain: "arbitrum", address: "0x25d8" },
+  ]);
+  assert.equal(tokens.get("solana")![0]!.address, "So11111111111111111111111111111111111111112");
+  assert.equal(tokens.has("nochain"), false);
+  assert.equal(tokens.has("unlisted"), false);
+  const pepe = tokens.get("pepe")![0]!;
+  assert.equal(tokenPairsUrl(pepe), "https://api.dexscreener.com/token-pairs/v1/ethereum/0x6982508145454Ce325dDbE47a25d4ec3d2311933");
+
+  const reply = [
+    { chainId: "ethereum", dexId: "uniswap", labels: ["v3"], pairAddress: "0xP2", baseToken: { address: "0x6982508145454ce325ddbe47a25d4ec3d2311933", symbol: "PEPE" }, quoteToken: { symbol: "USDC" }, priceUsd: "0.0000051", liquidity: { usd: 100 }, volume: { h24: 10 }, priceChange: { h24: 2 } },
+    { chainId: "ethereum", dexId: "uniswap", labels: ["v2"], pairAddress: "0xP1", baseToken: { address: "0x6982508145454Ce325dDbE47a25d4ec3d2311933", symbol: "PEPE" }, quoteToken: { symbol: "WETH" }, priceUsd: "0.0000050", liquidity: { usd: 900 }, volume: { h24: 90 }, priceChange: { h24: -1 } },
+    // PEPE as the quote token, and a pool without a price: left out.
+    { chainId: "ethereum", dexId: "uniswap", pairAddress: "0xP3", baseToken: { address: "0xother", symbol: "X" }, quoteToken: { symbol: "PEPE" }, priceUsd: "1", liquidity: { usd: 5000 } },
+    { chainId: "ethereum", dexId: "uniswap", pairAddress: "0xP4", baseToken: { address: pepe.address, symbol: "PEPE" }, quoteToken: { symbol: "DAI" }, priceUsd: null },
+  ];
+  const venues = parseTokenPairs(reply, pepe);
+  assert.deepEqual(venues.map((v) => [v.pair, v.dex, v.liquidity, v.chart]), [
+    ["PEPE/WETH", "uniswap v2", 900, "dex:eth:0xP1"],
+    ["PEPE/USDC", "uniswap v3", 100, "dex:eth:0xP2"],
+  ]);
+  assert.equal(venues[0]!.chain, "Ethereum");
+  assert.deepEqual(dexTotals(venues), { price: 0.000005, liquidity: 1000, volume: 100 });
+  assert.deepEqual(dexTotals([]), { price: null, liquidity: null, volume: null });
+
+  const market = (exchange: string, last: number, volume24h: number) => ({ exchange, name: `${exchange.toUpperCase()}:PEPEUSDT`, native: "PEPEUSDT", base: "PEPE", quote: "USDT", tickSize: 1e-9, stepSize: 1, minQty: 0, minNotional: 0, last, bid: last, ask: last, change24h: 0, volume24h });
+  const byBase = pairsByBase([market("okx", 0.0000049, 5e6), market("binance", 0.000005, 9e7)] as never);
+  assert.deepEqual(byBase.get("PEPE")!.map((m) => m.exchange), ["binance", "okx"]);
+  const row = withVenues({ id: "pepe", symbol: "PEPE", chart: "BINANCE:PEPEUSDT" }, byBase.get("PEPE"), venues);
+  assert.equal(row.exchanges, "BIN OKX");
+  assert.equal(row.dex_liq, 1000);
+  assert.equal(row.dex_vol, 100);
+  assert.equal(row.gap, 0);
+  assert.equal(row.chart, "BINANCE:PEPEUSDT");
+  // Not on an exchange: the chart is the most liquid DEX pool.
+  const dexOnlyCoin = withVenues({ id: "x", symbol: "X", chart: "BINANCE:XUSDT" }, undefined, venues);
+  assert.equal(dexOnlyCoin.exchanges, null);
+  assert.equal(dexOnlyCoin.gap, null);
+  assert.equal(dexOnlyCoin.chart, "dex:eth:0xP1");
+
+  const only = dexOnlyRow({ id: "dex:solana:abc", base: "FOCO", network: "Solana", liquidity: 5e4, volume: 2e5, price: 1 });
+  assert.equal(only.name, "FOCO · Solana");
+  assert.equal(only.symbol, "FOCO");
+  assert.equal(only.exchanges, "DEX only");
+  assert.equal(only.rank, null);
+  assert.equal(only.dex_liq, 5e4);
 });
 
 test("wallets: address kinds", () => {

@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { eventText, watchedSymbols } from "../../../adapters/alerts.ts";
+import { parseDexChartId } from "../../../adapters/markets-data.ts";
 import { getAdapter } from "../adapter/registry.ts";
 import { safeStorage } from "../lib/safe-storage.ts";
 import type { DesktopBridge } from "../../../adapters/types.ts";
@@ -90,6 +91,23 @@ export function DesktopSync() {
 
     // "Open chart" in the portfolio and market overview windows (and a clicked notification) charts the pair here.
     const offOpenChart = bridge?.app.onOpenChart((symbol) => {
+      // A DEX pool from the market overview is added to the symbol list first.
+      const pool = parseDexChartId(symbol);
+      if (pool) {
+        adapter.marketData.openDex(pool.network, pool.address).then(
+          async (name) => {
+            if (!name) {
+              toast.warning("Pool not found", `GeckoTerminal has no pool ${pool.address} on ${pool.network}.`);
+              return;
+            }
+            // The chart reads the pool's tick size from the symbol list, so a new pool is listed first.
+            if (!store().symbols.some((s) => s.name === name)) await store().loadSymbols();
+            store().setSelectedSymbol(name);
+          },
+          (err: unknown) => toast.warning("Could not open the pool", String((err as Error).message ?? err)),
+        );
+        return;
+      }
       if (store().symbols.some((s) => s.name === symbol)) store().setSelectedSymbol(symbol);
       else toast.warning("Not in the symbol list", `${symbol} is not listed; switch its exchange on in ${isMobileApp() ? "More › Market data" : "Data › Live prices"}.`);
     });

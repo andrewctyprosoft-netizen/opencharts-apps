@@ -158,7 +158,8 @@ function startBridge() {
   }
   let pendingChart = null; // a notification tapped before the terminal was listening
   function openChart(symbol) {
-    if (typeof symbol !== "string" || symbol.length > 60) return;
+    // A symbol name, or a market overview DEX pool (`dex:<network>:<address>`, up to ~110 characters).
+    if (typeof symbol !== "string" || symbol.length > 160) return;
     for (const view of Object.keys(DASHBOARDS)) closeOverlay(view);
     if (!listeners["app:open-chart"].size) pendingChart = symbol;
     else emit("app:open-chart", symbol);

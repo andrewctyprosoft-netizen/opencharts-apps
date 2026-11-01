@@ -1,15 +1,16 @@
 import {
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
+  ChevronDown,
+  ChevronRight,
   HelpCircle,
   Loader2,
   RefreshCw,
   RotateCcw,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EXCHANGE_IDS,
-  type CexMarket,
   type ExchangeId,
   klineUrl,
   marketListUrls,
@@ -17,6 +18,7 @@ import {
   parseMarkets,
 } from "../../../adapters/cex-map.ts";
 import { FX_INSTRUMENTS, yahooSymbol } from "../../../adapters/fx-map.ts";
+import { ohlcvPath, parseOhlcv } from "../../../adapters/gecko-map.ts";
 import {
   type ColumnDef,
   type Row,
@@ -28,23 +30,36 @@ import {
 } from "../../../adapters/market-filter.ts";
 import {
   CHART_SPECS,
-  COIN_COLUMNS,
+  COINGECKO_LIST_URL,
+  CRYPTO_COLUMNS,
+  type CoinToken,
+  DEX_CHAINS,
+  type DexVenue,
   FX_COLUMNS,
-  PAIR_COLUMNS,
   PERIODS,
   type Period,
   STOCK_COLUMNS,
   changeOverDays,
   closesBetween,
+  coinTokens,
   coingeckoUrl,
+  dexDayLine,
+  dexOnlyRow,
   fxRows,
   pairRows,
+  pairsByBase,
   parseCoinSparks,
   parseCoins,
+  parseDexChartId,
+  parseDexRows,
   parseSpark,
   parseStocks,
+  parseTokenPairs,
   sparkUrl,
   stocksUrl,
+  tokenPairsUrl,
+  trendingPoolsPath,
+  withVenues,
 } from "../../../adapters/markets-data.ts";
 import type { DesktopBridge } from "../../../adapters/types.ts";
 import { ipcMessage } from "../../../adapters/venues.ts";
@@ -55,12 +70,13 @@ import { Sparkline } from "./Sparkline.tsx";
 
 /**
  * OpenCharts Desktop addition: File › Dashboard › Market overview. Lists coins
- * (CoinGecko), exchange pairs (the enabled exchanges), forex and metals (Yahoo)
- * and the largest companies (Yahoo), with period changes, min/max ranges,
- * sorting and a custom condition over any column.
+ * (CoinGecko) with where each trades: the enabled exchanges' pairs and the DEX
+ * pools on eleven chains (DexScreener), plus trending DEX-only tokens
+ * (GeckoTerminal); forex and metals (Yahoo) and the largest companies (Yahoo).
+ * Period changes, min/max ranges, sorting and a custom condition over any column.
  */
 
-type Tab = "crypto" | "pairs" | "forex" | "stocks";
+type Tab = "crypto" | "forex" | "stocks";
 const TABS: Array<{
   id: Tab;
   label: string;
@@ -70,14 +86,8 @@ const TABS: Array<{
   {
     id: "crypto",
     label: "Crypto",
-    columns: COIN_COLUMNS,
-    source: "CoinGecko · top 1,000 by market cap",
-  },
-  {
-    id: "pairs",
-    label: "Crypto pairs",
-    columns: PAIR_COLUMNS,
-    source: "Exchange tickers · busiest 400 USD pairs per exchange",
+    columns: CRYPTO_COLUMNS,
+    source: "CoinGecko top 1,000 · 6 exchanges · DEX pools (DexScreener) · trending (GeckoTerminal)",
   },
   {
     id: "forex",
@@ -94,6 +104,13 @@ const TABS: Array<{
 ];
 const PAGE = 300;
 const HISTORY_ROWS = 200;
+/** Trending DEX pools load 20 a page; GeckoTerminal's free API allows about five calls a minute. */
+const DEX_PAGES = 5;
+/** Exchange pairs per exchange matched to coins (the busiest USD pairs). */
+const PAIRS_PER_EXCHANGE = 1500;
+/** Chains looked up per coin for its DEX pools, and pools kept per coin. */
+const TOKEN_CHAINS = 2;
+const VENUES_KEPT = 12;
 type Closes = Array<[number, number]>;
 interface TabData {
   rows: Row[];
@@ -102,6 +119,9 @@ interface TabData {
   loadedAt: number;
 }
 const EMPTY: TabData = { rows: [], loading: false, error: "", loadedAt: 0 };
+const rateLimited = (err: unknown) => /rate limit/i.test(ipcMessage(err));
+/** Trending DEX-only tokens are rows too; their id is the pool's chart id. */
+const isDex = (r: Row) => String(r.id).startsWith("dex:");
 const day = (d: Date) => d.toISOString().slice(0, 10);
 
 export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
@@ -115,7 +135,6 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
   const [tab, setTab] = useState<Tab>("crypto");
   const [data, setData] = useState<Record<Tab, TabData>>({
     crypto: EMPTY,
-    pairs: EMPTY,
     forex: EMPTY,
     stocks: EMPTY,
   });
@@ -147,8 +166,15 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
   const [history, setHistory] = useState(() => new Map<string, Closes>());
   const inflight = useRef(new Set<string>());
   const alive = useRef(true);
-  const markets = useRef(new Map<string, CexMarket>());
   const binancePairs = useRef<Set<string> | null>(null);
+  // Where each coin trades: exchange pairs by ticker, a coin's tokens (by CoinGecko id), its DEX
+  // pools (loaded for rows on screen or expanded), and the trending pools of DEX-only tokens.
+  const [pairs, setPairs] = useState(() => pairsByBase([]));
+  const [tokens, setTokens] = useState(() => new Map<string, CoinToken[]>());
+  const [dexVenues, setDexVenues] = useState(() => new Map<string, DexVenue[]>());
+  const venuesInflight = useRef(new Set<string>());
+  const [trending, setTrending] = useState<Row[]>([]);
+  const [expanded, setExpanded] = useState(() => new Set<string>());
   // Row charts for the day, week and month views, keyed `${period}:${row id}` (year and custom
   // charts come from `history`). Only rows on screen are fetched; see `onScreen`.
   const [charts, setCharts] = useState(() => new Map<string, number[]>());
@@ -229,6 +255,44 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
     [getJson],
   );
 
+  /** A DEX pool's closes, through the GeckoTerminal queue that keeps under its rate limit. */
+  const dexCloses = useCallback(
+    async (id: string, timeframe: string, limit: number): Promise<Closes> => {
+      const pool = parseDexChartId(id);
+      const request = { symbol: id, timeframe, limit };
+      const path = pool && ohlcvPath(pool, request);
+      if (!path) return [];
+      return parseOhlcv(await bridge.gecko.get(path, "low"), request).map(
+        (c): [number, number] => [c.time, c.close],
+      );
+    },
+    [bridge],
+  );
+
+  /** The crypto tab's venues: the exchanges' pairs, then the trending DEX pools. */
+  const loadVenues = useCallback(async () => {
+    const lists = await Promise.allSettled(
+      exchanges.map(async (ex) =>
+        parseMarkets(ex, await Promise.all(marketListUrls(ex).map(getJson)), PAIRS_PER_EXCHANGE),
+      ),
+    );
+    setPairs(pairsByBase(lists.flatMap((r) => (r.status === "fulfilled" ? r.value : []))));
+    const failed = lists.filter((r) => r.status === "rejected").length;
+    if (failed) patch("crypto", { error: `${failed} exchange(s) did not answer.` });
+    let rows: Row[] = [];
+    for (let page = 1; page <= DEX_PAGES; page++) {
+      try {
+        // The trending list can shift between pages; keep a pool's first place.
+        const seen = new Set(rows.map((r) => r.id));
+        const more = parseDexRows(await bridge.gecko.get(trendingPoolsPath(page), "low"), rows.length);
+        rows = rows.concat(more.filter((r) => !seen.has(r.id)));
+        if (alive.current) setTrending(rows);
+      } catch {
+        break; // GeckoTerminal busy: the pools so far will do
+      }
+    }
+  }, [exchanges, getJson, bridge]);
+
   const load = useCallback(
     async (t: Tab) => {
       patch(t, { loading: true, error: "" });
@@ -250,26 +314,15 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
               if (closes.length > 1) coinWeek.current.set(id, closes);
             patch(t, { rows, loadedAt: Date.now() });
           }
-        } else if (t === "pairs") {
-          const lists = await Promise.allSettled(
-            exchanges.map(async (ex) =>
-              parseMarkets(
-                ex,
-                await Promise.all(marketListUrls(ex).map(getJson)),
-                400,
-              ),
-            ),
+          // Then the venues: after the coins, so the first rows' chart requests go out first (the
+          // exchanges' full ticker lists are large, and on a phone they queue on the same hosts).
+          void loadVenues();
+          // Each coin's tokens on the DEX chains, for its pools.
+          const ids = new Set(rows.map((r) => String(r.id)));
+          void getJson(COINGECKO_LIST_URL).then(
+            (list) => setTokens(coinTokens(list, ids)),
+            () => setTokens(new Map()),
           );
-          const all = lists.flatMap((r) =>
-            r.status === "fulfilled" ? r.value : [],
-          );
-          markets.current = new Map(all.map((m) => [m.name, m]));
-          const failed = lists.filter((r) => r.status === "rejected").length;
-          patch(t, {
-            rows: pairRows(all),
-            loadedAt: Date.now(),
-            error: failed ? `${failed} exchange(s) did not answer.` : "",
-          });
         } else if (t === "forex") {
           const symbols = FX_INSTRUMENTS.map((i) => yahooSymbol(i.name));
           const spark = new Map<string, Closes>();
@@ -301,8 +354,9 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
         patch(t, { loading: false });
       }
     },
-    [exchanges, getJson],
+    [getJson, loadVenues],
   );
+
 
   const selectTab = (t: Tab) => {
     setTab(t);
@@ -334,6 +388,10 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
       if (period !== "custom") {
         const native = row[`chg_${period}`];
         if (typeof native === "number") return native;
+        // DEX pools: the week and month change come from the row's own chart.
+        const line = charts.get(`${period}:${String(row.id)}`);
+        if (isDex(row) && line && line.length > 1)
+          return (line.at(-1)! / line[0]! - 1) * 100;
         const closes = history.get(String(row.id));
         return closes ? changeOverDays(closes, days) : null;
       }
@@ -342,7 +400,7 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
         ? changeBetween(closes, fromSec, toSec)
         : null;
     },
-    [period, days, fromSec, toSec, history],
+    [period, days, fromSec, toSec, history, charts],
   );
 
   // ── Filtering and sorting ──
@@ -356,7 +414,22 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
     }
     const q = search.trim().toLowerCase();
     const num = (s: string) => (s.trim() ? parseAmount(s) : null);
-    const rows = data[tab].rows.map((r): Row => ({
+    let base = data[tab].rows;
+    if (tab === "crypto") {
+      // A trending pool whose token is one of the coins is already in that coin's DEX pools.
+      const known = new Set(
+        [...tokens.values()].flat().map((t) => t.address.toLowerCase()),
+      );
+      base = [
+        ...base.map((r) =>
+          withVenues(r, pairs.get(String(r.symbol)), dexVenues.get(String(r.id))),
+        ),
+        ...trending
+          .filter((p) => !known.has(String(p.base_addr ?? "").toLowerCase()))
+          .map(dexOnlyRow),
+      ];
+    }
+    const rows = base.map((r): Row => ({
       ...r,
       change: changeOf(r),
     }));
@@ -391,12 +464,13 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
       ? onScreen
       : new Set(sorted.slice(0, 30).map((r) => String(r.id)));
     // Rows still missing a change value for this period, near the top of the current view, and
-    // rows on screen whose year or custom chart is drawn from daily closes.
+    // rows on screen whose year or custom chart is drawn from daily closes. DEX pools only fetch
+    // on screen: GeckoTerminal allows about five calls a minute.
     const dailyCharts = period === "1y" || period === "custom";
     const needHistory = sorted.filter(
       (r, i) =>
         !history.has(String(r.id)) &&
-        ((i < HISTORY_ROWS && r.change === null) ||
+        ((i < HISTORY_ROWS && r.change === null && !isDex(r)) ||
           (dailyCharts && visible.has(String(r.id)))),
     );
     return {
@@ -418,6 +492,10 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
     spec,
     history,
     onScreen,
+    pairs,
+    tokens,
+    dexVenues,
+    trending,
   ]);
 
   // The visible top rows whose change needs daily history (custom range, or week/month on pairs and stocks).
@@ -458,25 +536,12 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
           const r = queue.shift()!;
           let closes: Closes = [];
           try {
-            if (tab === "crypto") {
-              closes = await coinCandles(String(r.symbol), "1d", 1000);
-            } else {
-              const m = markets.current.get(String(r.id));
-              const url =
-                m &&
-                klineUrl(
-                  m.exchange,
-                  m.native,
-                  { symbol: m.name, timeframe: "1d", limit: 1000 },
-                  Date.now(),
-                );
-              if (m && url)
-                closes = parseKlines(m.exchange, await getJson(url), {
-                  symbol: m.name,
-                  timeframe: "1d",
-                }).map((c) => [c.time, c.close]);
-            }
-          } catch {
+            closes = isDex(r)
+              ? await dexCloses(String(r.id), "1d", 1000)
+              : await coinCandles(String(r.symbol), "1d", 1000);
+          } catch (err) {
+            // A DEX pool still rate limited after the queue's retries stays unloaded and is tried again later.
+            if (isDex(r) && rateLimited(err)) continue;
             closes = [];
           }
           if (alive.current) addHistory([[String(r.id), closes]]);
@@ -549,7 +614,15 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
   /** The row's chart for the current period; undefined while it loads. */
   const chartOf = (r: Row): number[] | undefined => {
     const id = String(r.id);
-    if (chartSpec) return charts.get(`${period}:${id}`);
+    if (chartSpec) {
+      const line = charts.get(`${period}:${id}`);
+      // A DEX pool's day line starts from its reported changes until its 15-minute bars arrive.
+      if (!line && isDex(r) && period === "1d") {
+        const rough = dexDayLine(r);
+        return rough.length ? rough : undefined;
+      }
+      return line;
+    }
     const closes = history.get(id);
     if (!closes) return undefined;
     const last = closes.at(-1)?.[0] ?? 0;
@@ -627,7 +700,13 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
           if (!wanted(r)) continue;
           let closes: Closes = [];
           try {
-            if (tab === "crypto") {
+            if (isDex(r)) {
+              closes = await dexCloses(
+                String(r.id),
+                chartSpec.bar,
+                chartSpec.bars,
+              );
+            } else {
               closes = await coinCandles(
                 String(r.symbol),
                 chartSpec.bar,
@@ -636,23 +715,9 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
               const gecko = coinWeek.current.get(String(r.id));
               if (closes.length < 2 && p === "1d" && gecko)
                 closes = gecko.slice(-25);
-            } else {
-              const m = markets.current.get(String(r.id));
-              const request = {
-                symbol: m?.name ?? "",
-                timeframe: chartSpec.bar,
-                limit: chartSpec.bars,
-              };
-              const url =
-                m && klineUrl(m.exchange, m.native, request, Date.now());
-              if (m && url)
-                closes = parseKlines(
-                  m.exchange,
-                  await getJson(url),
-                  request,
-                ).map((c): [number, number] => [c.time, c.close]);
             }
-          } catch {
+          } catch (err) {
+            if (isDex(r) && rateLimited(err)) continue;
             closes = [];
           }
           if (alive.current) addCharts([[key(r), values(closes)]]);
@@ -664,6 +729,58 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartKey, period, tab]);
+
+  // ── DEX pools per coin (DexScreener, about 240 calls a minute) ──
+  /** The tokens whose pools a row lists: a coin's first chains, or a DEX-only token's own. */
+  const tokensOf = (r: Row): CoinToken[] => {
+    if (!isDex(r)) return (tokens.get(String(r.id)) ?? []).slice(0, TOKEN_CHAINS);
+    const network = String(r.id).split(":")[1];
+    const chain = DEX_CHAINS.find((c) => c.gt === network);
+    return chain && r.base_addr ? [{ chain: chain.ds, address: String(r.base_addr) }] : [];
+  };
+  const needVenues =
+    tab === "crypto"
+      ? shown.filter(
+          (r) =>
+            (visible.has(String(r.id)) || expanded.has(String(r.id))) &&
+            !dexVenues.has(String(r.id)) &&
+            tokensOf(r).length > 0,
+        )
+      : [];
+  const venuesKey = needVenues.map((r) => r.id).join(",");
+  useEffect(() => {
+    const todo = needVenues.filter((r) => !venuesInflight.current.has(String(r.id)));
+    if (!todo.length) return;
+    for (const r of todo) venuesInflight.current.add(String(r.id));
+    const queue = [...todo];
+    const worker = async () => {
+      while (queue.length && alive.current) {
+        const r = queue.shift()!;
+        const id = String(r.id);
+        const found: DexVenue[] = [];
+        for (const token of tokensOf(r)) {
+          try {
+            found.push(...parseTokenPairs(await getJson(tokenPairsUrl(token)), token));
+          } catch {
+            // that chain's pools stay unknown
+          }
+        }
+        found.sort((a, b) => b.liquidity - a.liquidity);
+        if (alive.current)
+          setDexVenues((m) => new Map(m).set(id, found.slice(0, VENUES_KEPT)));
+      }
+    };
+    void Promise.all([worker(), worker()]).finally(() => {
+      for (const r of todo) venuesInflight.current.delete(String(r.id));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venuesKey]);
+  const toggle = (id: string) =>
+    setExpanded((s) => {
+      const next = new Set(s);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
 
   const loadingHistory = period !== "1d" && needHistory.length > 0;
   const current = data[tab];
@@ -742,8 +859,9 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
         </span>
         <button
           onClick={() => {
-            // Redraw the row charts too: the rows on screen fetch theirs again.
+            // Redraw the row charts too: the rows on screen fetch theirs again, and their DEX pools.
             setCharts(new Map());
+            setDexVenues(new Map());
             void load(tab);
           }}
           disabled={current.loading}
@@ -904,7 +1022,7 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
             onChange={(e) => setCondition(e.target.value)}
             placeholder={
               tab === "crypto"
-                ? 'change > 5 and volume > 50M and not symbol contains "usd"'
+                ? 'change > 5 and dex_liq > 1M and exchanges contains "BIN"'
                 : tab === "stocks"
                   ? "pe < 25 and div_yield > 1 and mcap > 100B"
                   : "change > 0 and volume > 1M"
@@ -1013,8 +1131,8 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
           </thead>
           <tbody>
             {shown.slice(0, limit).map((r) => (
+              <Fragment key={String(r.id)}>
               <tr
-                key={String(r.id)}
                 data-row-id={String(r.id)}
                 className="group border-b border-border/40 hover:bg-secondary"
               >
@@ -1031,7 +1149,25 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
                       c.kind === "pct" && pctClass(r[c.key] as number | null),
                     )}
                   >
-                    {cell(c, r[c.key] ?? null)}
+                    {tab === "crypto" && c.key === "name" ? (
+                      // A coin opens into its exchange pairs and DEX pools.
+                      <button
+                        type="button"
+                        data-testid="market-expand"
+                        onClick={() => toggle(String(r.id))}
+                        className="flex items-center gap-1 max-w-full hover:text-primary"
+                        title="Exchanges and DEX pools"
+                      >
+                        {expanded.has(String(r.id)) ? (
+                          <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                        )}
+                        <span className="truncate">{cell(c, r[c.key] ?? null)}</span>
+                      </button>
+                    ) : (
+                      cell(c, r[c.key] ?? null)
+                    )}
                   </td>
                 ))}
                 {/* The row chart stays at the right edge, however far the table scrolls; a click opens the full chart. */}
@@ -1042,7 +1178,7 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
                     onClick={() => void bridge.app.openChart(String(r.chart))}
                     title={
                       r.chart
-                        ? `${String(r.name ?? r.pair ?? r.symbol)} · ${periodLabel} · click to open ${String(r.chart)}`
+                        ? `${String(r.name ?? r.pair ?? r.symbol)} · ${periodLabel} · click to open ${isDex(r) ? `the pool on ${String(r.dex)}` : String(r.chart).startsWith("dex:") ? "its most liquid DEX pool" : String(r.chart)}`
                         : `${String(r.name ?? r.symbol)} · ${periodLabel}`
                     }
                     className="block rounded enabled:cursor-pointer enabled:hover:ring-1 enabled:hover:ring-border"
@@ -1055,6 +1191,19 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
                   </button>
                 </td>
               </tr>
+              {expanded.has(String(r.id)) && (
+                <tr data-testid="market-venues" className="border-b border-border/40 bg-card/40">
+                  <td colSpan={columns.length + 1} className="p-0">
+                    <Venues
+                      cex={isDex(r) ? [] : pairRows(pairs.get(String(r.symbol)) ?? [])}
+                      dex={dexVenues.get(String(r.id))}
+                      noTokens={tokensOf(r).length === 0}
+                      onOpen={(chart) => void bridge.app.openChart(chart)}
+                    />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -1073,6 +1222,114 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** An expanded coin: its exchange pairs and DEX pools, each opening its own chart. */
+function Venues({
+  cex,
+  dex,
+  noTokens,
+  onOpen,
+}: {
+  cex: Row[];
+  dex: DexVenue[] | undefined;
+  noTokens: boolean;
+  onOpen: (chart: string) => void;
+}) {
+  const head = "px-2 py-1 font-medium text-muted-foreground text-left whitespace-nowrap";
+  const num = "px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap";
+  const open = (chart: string | null, kind: string, label: string) =>
+    chart ? (
+      <button
+        type="button"
+        data-testid="venue-chart"
+        data-kind={kind}
+        onClick={() => onOpen(chart)}
+        className="px-2 py-0.5 rounded border border-border hover:bg-secondary"
+        title={`Open ${label} on the chart`}
+      >
+        Chart
+      </button>
+    ) : null;
+  return (
+    // Window-wide and pinned left, so it stays in view while the wide table scrolls sideways.
+    <div className="sticky left-0 w-[calc(100vw-1rem)] flex flex-wrap gap-x-8 gap-y-3 px-4 py-3">
+      <section>
+        <div className="mb-1 font-medium">Exchanges ({cex.length})</div>
+        {cex.length ? (
+          <table className="text-[12px]">
+            <thead>
+              <tr>
+                <th className={head}>Exchange</th>
+                <th className={head}>Pair</th>
+                <th className={cn(head, "text-right")}>Price</th>
+                <th className={cn(head, "text-right")}>24h</th>
+                <th className={cn(head, "text-right")}>Volume 24h</th>
+                <th className={cn(head, "text-right")}>Spread %</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {cex.map((m) => (
+                <tr key={String(m.id)} data-venue="cex">
+                  <td className="px-2 py-1">{String(m.exchange)}</td>
+                  <td className="px-2 py-1">{String(m.pair)}</td>
+                  <td className={num}>{fmtPrice(Number(m.price))}</td>
+                  <td className={cn(num, pctClass(m.chg_1d as number | null))}>{cell({ key: "chg_1d", label: "", kind: "pct" }, m.chg_1d ?? null)}</td>
+                  <td className={num}>{fmtUsd(Number(m.volume), 1e5)}</td>
+                  <td className={num}>{m.spread == null ? "—" : Number(m.spread).toFixed(3)}</td>
+                  <td className="px-2 py-1">{open(String(m.chart), "cex", String(m.id))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="text-muted-foreground">Not listed on the exchanges switched on.</div>
+        )}
+      </section>
+      <section>
+        <div className="mb-1 font-medium">DEX pools ({dex?.length ?? "…"})</div>
+        {noTokens ? (
+          <div className="text-muted-foreground">No token on the supported chains.</div>
+        ) : !dex ? (
+          <div className="flex items-center gap-1 text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading pools…
+          </div>
+        ) : dex.length ? (
+          <table className="text-[12px]">
+            <thead>
+              <tr>
+                <th className={head}>Chain</th>
+                <th className={head}>DEX</th>
+                <th className={head}>Pair</th>
+                <th className={cn(head, "text-right")}>Price</th>
+                <th className={cn(head, "text-right")}>24h</th>
+                <th className={cn(head, "text-right")}>Liquidity</th>
+                <th className={cn(head, "text-right")}>Volume 24h</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {dex.map((v, i) => (
+                <tr key={`${v.chart ?? v.pair}:${i}`} data-venue="dex">
+                  <td className="px-2 py-1">{v.chain}</td>
+                  <td className="px-2 py-1">{v.dex}</td>
+                  <td className="px-2 py-1">{v.pair}</td>
+                  <td className={num}>{fmtPrice(v.price)}</td>
+                  <td className={cn(num, pctClass(v.change))}>{v.change == null ? "—" : fmtPct(v.change)}</td>
+                  <td className={num}>{fmtUsd(v.liquidity, 1e5)}</td>
+                  <td className={num}>{fmtUsd(v.volume, 1e5)}</td>
+                  <td className="px-2 py-1">{open(v.chart, "dex", `${v.pair} on ${v.dex}`)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="text-muted-foreground">No DEX pools found.</div>
+        )}
+      </section>
     </div>
   );
 }

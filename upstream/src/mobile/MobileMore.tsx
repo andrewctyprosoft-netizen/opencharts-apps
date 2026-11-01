@@ -70,7 +70,7 @@ export function MobileMore() {
 
       <Group title="Dashboards">
         <Row icon={Wallet} label="Portfolio" hint="Balances, open orders and wallets" onClick={() => bridge.openDashboard("portfolio")} testId="open-portfolio" />
-        <Row icon={LayoutGrid} label="Market overview" hint="Crypto, pairs, forex & metals, stocks" onClick={() => bridge.openDashboard("markets")} testId="open-markets" />
+        <Row icon={LayoutGrid} label="Market overview" hint="Crypto on exchanges and DEXs, forex & metals, stocks" onClick={() => bridge.openDashboard("markets")} testId="open-markets" />
         <Row icon={BellRing} label="Alerts & positions" hint="Every alert, position and order" onClick={() => bridge.openDashboard("desk")} testId="open-desk" />
         <Row
           icon={Bell}

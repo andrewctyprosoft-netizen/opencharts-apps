@@ -246,8 +246,32 @@ async function main() {
   await until(js, `document.querySelector('.oc-ovl iframe')?.contentDocument?.querySelector('[data-testid="market-table"] thead th:last-child')?.textContent.includes("Month") && ${drawn} >= 8`, 45_000);
   r.marketCharts.month = await js(drawn);
   shot("10b-markets-month");
-  adb("shell", "input", "keyevent", "KEYCODE_BACK");
-  await wait(600);
+  // The first coin opens into its exchange pairs and DEX pools; tapping a pool's chart closes the
+  // panel and charts the pool in the terminal.
+  await panel(`d.querySelector('[data-period="1d"]').click()`);
+  await panel(`d.querySelector('[data-testid="market-table"] tbody tr [data-testid="market-expand"]').click()`);
+  const venues = (kind) => `(document.querySelector('.oc-ovl iframe')?.contentDocument?.querySelectorAll('[data-testid="market-venues"] [data-venue="${kind}"]').length ?? 0)`;
+  await until(js, `${venues("cex")} >= 3 && ${venues("dex")} >= 1`, 45_000);
+  r.marketVenues = { cex: await js(venues("cex")), dex: await js(venues("dex")) };
+  await panel(`d.querySelector('[data-testid="market-venues"]').scrollIntoView()`);
+  await wait(800);
+  shot("10c-markets-venues");
+  const before = await js("window.__ocDesktop.selected()");
+  // The chart's legend (open price of the last bar) changes once the pool's own bars are drawn.
+  const legend = `document.body.innerText.match(/\\d+m\\s+O\\s+([\\d.,]+)/)?.[1] ?? ""`;
+  const legendBefore = await js(legend);
+  r.dexOpened = { pair: await panel(`(() => { const b = d.querySelector('[data-testid="market-venues"] [data-venue="dex"] [data-testid="venue-chart"]'); b.click(); return b.closest("tr").children[2].textContent; })()`) };
+  await until(js, `window.__ocDesktop.selected() !== ${JSON.stringify(before)}`, 60_000);
+  const after = await js("window.__ocDesktop.selected()");
+  // The pool's candles come through the same GeckoTerminal queue as the overview's row charts.
+  const chart = await js(`window.__ocDesktop.smokeChart(${JSON.stringify(after)})`);
+  // GeckoTerminal paces its calls, so the chart can take half a minute after the overview's requests.
+  // The legend empties on the switch, then shows the pool's own price (not a reformatted old one).
+  const away = `((v) => v > 0 && Math.abs(v - ${Number(legendBefore.replace(/,/g, "")) || 0}) > ${(Number(legendBefore.replace(/,/g, "")) || 0) * 0.01})(Number((${legend}).replace(/,/g, "")))`;
+  const drew = await until(js, away, 90_000);
+  await wait(1500);
+  Object.assign(r.dexOpened, { before, after, panels: await js("window.ocMobile.panelsOpen()"), candles: chart?.candles ?? 0, error: chart?.error, legendBefore, legend: await js(legend), drew });
+  shot("10d-dex-pool-chart");
   await js(`window.ocMobile.openDashboard("portfolio")`);
   await until(js, `(document.querySelector('.oc-ovl iframe')?.contentDocument?.querySelectorAll('[data-testid="portfolio-not-connected"] button').length ?? 0) >= 5`, 30_000);
   r.portfolio = await panel(`[...d.querySelectorAll('[data-testid="portfolio-not-connected"] button')].length`);
@@ -297,6 +321,7 @@ async function main() {
     gold: (r.gold?.candles ?? 0) > 0,
     markets: (r.markets ?? 0) > 20,
     marketCharts: (r.marketCharts?.day ?? 0) >= 8 && (r.marketCharts?.month ?? 0) >= 8,
+    marketDex: r.marketVenues?.cex >= 3 && r.marketVenues.dex >= 1 && r.dexOpened?.panels === 0 && r.dexOpened.candles > 0 && r.dexOpened.drew && r.dexOpened.after !== r.dexOpened.before && /^[^:]+\/[^:]+$/.test(r.dexOpened.after ?? ""),
     portfolio: (r.portfolio ?? 0) >= 5,
     desk: Boolean(r.desk?.live?.startsWith("Terminal running")),
     keysPage: r.keysPage?.tabs === 7 && r.keysPage.active === "OKX",

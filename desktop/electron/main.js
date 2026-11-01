@@ -375,7 +375,8 @@ function registerIpc() {
   });
   terminal("app:open-window", (view) => void openDashboard(view));
   terminal("app:open-chart", (symbol) => {
-    if (typeof symbol !== "string" || symbol.length > 60 || !win) return;
+    // A symbol name, or a market overview DEX pool (`dex:<network>:<address>`, up to ~110 characters).
+    if (typeof symbol !== "string" || symbol.length > 160 || !win) return;
     if (win.isMinimized()) win.restore();
     win.focus();
     send("app:open-chart", symbol);
@@ -424,6 +425,15 @@ const RAIL_GROUPS = [
   "Annotation tools",
 ];
 
+/** A smoke screenshot; capturePage can answer UnknownVizError while the display sleeps, so a failure is logged, not fatal. */
+async function saveShot(wc, name) {
+  try {
+    fs.writeFileSync(path.join(smokeOut, name), (await wc.capturePage()).toPNG());
+  } catch (err) {
+    console.warn(`[smoke] screenshot ${name} skipped: ${err.message || err}`);
+  }
+}
+
 async function smokeDraw(tools) {
   const wc = win.webContents;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -446,7 +456,7 @@ async function smokeDraw(tools) {
   const toggleFib = `[...document.querySelectorAll("button")].find((b) => b.title === "Fib & Gann tools")?.click()`;
   await wc.executeJavaScript(toggleFib);
   await wait(300);
-  fs.writeFileSync(path.join(smokeOut, "smoke-rail.png"), (await wc.capturePage()).toPNG());
+  await saveShot(wc, "smoke-rail.png");
   await wc.executeJavaScript(toggleFib);
   await wait(100);
   const problems = [];
@@ -510,7 +520,7 @@ async function smokeDraw(tools) {
   await mouse("mouseDown", last, { clickCount: 2 });
   await mouse("mouseUp", last, { clickCount: 2 });
   await wait(400);
-  fs.writeFileSync(path.join(smokeOut, "smoke-settings.png"), (await wc.capturePage()).toPNG());
+  await saveShot(wc, "smoke-settings.png");
   await key("Escape");
   await wait(500);
   const saved = await wc.executeJavaScript(`window.__ocDesktop.drawings().then((l) => l.map((d) => d.tool ?? d.type))`);
@@ -536,7 +546,7 @@ async function smokeGate() {
   await order("BINANCE:BTCUSDT", 0.001);
   await wait(800);
   const missing = await dialog();
-  fs.writeFileSync(path.join(smokeOut, "smoke-gate-missing.png"), (await wc.capturePage()).toPNG());
+  await saveShot(wc, "smoke-gate-missing.png");
   await click("Paper trade");
   out.paper = { dialog: missing?.kind, mentionsVenue: Boolean(missing?.text.includes("Binance")), result: await result() };
 
@@ -557,14 +567,14 @@ async function smokeGate() {
     tab: keysWin ? await keysWin.webContents.executeJavaScript(`document.querySelector("nav button.active span")?.textContent ?? ""`) : "",
   };
   if (keysWin) {
-    fs.writeFileSync(path.join(smokeOut, "smoke-keys.png"), (await keysWin.webContents.capturePage()).toPNG());
+    await saveShot(keysWin.webContents, "smoke-keys.png");
     keysWin.close();
   }
 
   await order("OKX:BTCUSDT", 0.001);
   await wait(1500);
   const confirm = await dialog();
-  fs.writeFileSync(path.join(smokeOut, "smoke-gate-confirm.png"), (await wc.capturePage()).toPNG());
+  await saveShot(wc, "smoke-gate-confirm.png");
   await click("Cancel");
   out.confirmCancel = { dialog: confirm?.kind, text: confirm?.text.slice(0, 300), result: await result() };
 
@@ -652,7 +662,7 @@ async function smokeAlerts() {
   wc.sendInputEvent({ type: "mouseUp", ...at, button: "right", clickCount: 1 });
   await wait(500);
   out.menuItem = await js(`[...document.querySelectorAll("button")].map((b) => b.textContent.trim()).find((t) => t.startsWith("Set alert on")) ?? null`);
-  fs.writeFileSync(path.join(smokeOut, "smoke-alert-menu.png"), (await wc.capturePage()).toPNG());
+  await saveShot(wc, "smoke-alert-menu.png");
   await js(`[...document.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith("Set alert on"))?.click()`);
   await wait(400);
   out.fromMenu = await js(`window.__ocDesktop.alerts().alerts.map((a) => ({ symbol: a.symbol, price: a.price, side: a.side }))`);
@@ -661,7 +671,7 @@ async function smokeAlerts() {
   await js(`[...document.querySelectorAll("button")].find((b) => b.querySelector("span")?.textContent === "Alerts")?.click()`);
   await wait(600);
   out.tabRows = await js(`document.querySelectorAll('[data-testid="alerts-table"] tbody tr[data-alert-status]').length`);
-  fs.writeFileSync(path.join(smokeOut, "smoke-alerts-tab.png"), (await wc.capturePage()).toPNG());
+  await saveShot(wc, "smoke-alerts-tab.png");
 
   // 3. Fire: armed "below" a level just under the market, so the next tick crosses up.
   await until(wc, `window.__ocDesktop.mid(${JSON.stringify(symbol)}) !== null`, 20_000);
@@ -680,7 +690,7 @@ async function smokeAlerts() {
     notifications: notified - before,
     toast: await js(`document.body.innerText.includes("Alert: ${symbol}")`),
   };
-  fs.writeFileSync(path.join(smokeOut, "smoke-alerts-fired.png"), (await wc.capturePage()).toPNG());
+  await saveShot(wc, "smoke-alerts-fired.png");
 
   // 4. A paper position (no API key: the reminder's "Paper trade").
   await js(`window.__p = window.__ocDesktop.smokeOrder(${JSON.stringify(symbol)}, 0.001); true`);
@@ -699,7 +709,7 @@ async function smokeAlerts() {
     positions: [...document.querySelectorAll('[data-testid="desk-positions"] tbody tr')].map((r) => r.innerText.split("\\t").slice(0, 3).join(" ")),
     summary: document.querySelector('[data-testid="desk-summary"]')?.innerText.replace(/\\n/g, " "),
   })`);
-  fs.writeFileSync(path.join(smokeOut, "smoke-desk.png"), (await d.capturePage()).toPNG());
+  await saveShot(d, "smoke-desk.png");
   await d.executeJavaScript(`window.confirm = () => true; [...document.querySelectorAll('[data-testid="desk-positions"] tbody tr')].find((r) => r.innerText.startsWith("Paper"))?.querySelectorAll("button")[1]?.click()`);
   out.desk.closed = await until(d, `document.querySelector('[data-testid="desk-positions"]')?.innerText.includes("No open positions")`, 10_000);
   return out;
@@ -780,20 +790,51 @@ async function smokeDash() {
   out.markets.crypto.hscroll = await hScroll(dashboards.get("markets"), '[data-testid="market-table"]');
   await shot(m, "smoke-markets-crypto.png");
   await m.executeJavaScript(setInput('[data-testid="market-condition"]', ""));
-  for (const tab of ["pairs", "forex", "stocks"]) {
+  // Crypto venues: exchanges listing each coin, DEX liquidity for the rows on screen (DexScreener),
+  // trending DEX-only tokens (GeckoTerminal), and a coin opened into its pairs and pools.
+  const cellsOf = (label) => `(() => {
+    const i = [...document.querySelectorAll('[data-testid="market-table"] thead th')].findIndex((th) => th.textContent.startsWith(${JSON.stringify(label)}));
+    return [...document.querySelectorAll('[data-testid="market-table"] tbody tr[data-row-id]')].map((r) => r.children[i]?.textContent ?? "");
+  })()`;
+  const filled = (label, n) => `${cellsOf(label)}.slice(0, 15).filter((t) => t && t !== "—").length >= ${n}`;
+  await until(m, filled("Exchanges", 12), 40_000);
+  await until(m, filled("DEX liquidity", 8), 90_000);
+  out.markets.venues = await m.executeJavaScript(`(() => {
+    const ex = ${cellsOf("Exchanges")}, liq = ${cellsOf("DEX liquidity")}, gap = ${cellsOf("CEX/DEX gap")};
+    return { exchanges: ex.slice(0, 15).filter((t) => t && t !== "—").length, first: ex[0], dexLiq: liq.slice(0, 15).filter((t) => t && t !== "—").length, gaps: gap.slice(0, 15).filter((t) => /%$/.test(t)).length };
+  })()`);
+  // DEX-only tokens (most have no market cap, so they sort last): counted through the condition box.
+  await m.executeJavaScript(setInput('[data-testid="market-condition"]', 'exchanges contains "DEX only"'));
+  const dexOnly = `Number((document.querySelector('[data-testid="market-count"]')?.textContent ?? "").split(" of ")[0].replace(/,/g, ""))`;
+  await until(m, `${dexOnly} >= 10`, 120_000);
+  out.markets.venues.dexOnly = await m.executeJavaScript(dexOnly);
+  await shot(m, "smoke-markets-dex-only.png");
+  await m.executeJavaScript(setInput('[data-testid="market-condition"]', ""));
+  await wait(500);
+  await m.executeJavaScript(`document.querySelector('[data-testid="market-table"] tbody tr [data-testid="market-expand"]').click()`);
+  await until(m, `document.querySelectorAll('[data-testid="market-venues"] [data-venue="cex"]').length >= 3 && document.querySelectorAll('[data-testid="market-venues"] [data-venue="dex"]').length >= 1`, 30_000);
+  out.markets.expanded = await m.executeJavaScript(`({
+    coin: document.querySelector('[data-testid="market-table"] tbody tr[data-row-id]')?.dataset.rowId,
+    cex: document.querySelectorAll('[data-testid="market-venues"] [data-venue="cex"]').length,
+    dex: document.querySelectorAll('[data-testid="market-venues"] [data-venue="dex"]').length,
+  })`);
+  await shot(m, "smoke-markets-venues.png");
+  // A DEX pool's chart button adds the pool to the terminal and charts it there.
+  const selected = () => win.webContents.executeJavaScript("window.__ocDesktop.selected()");
+  const before = await selected();
+  const pair = await m.executeJavaScript(
+    `(() => { const b = document.querySelector('[data-testid="market-venues"] [data-venue="dex"] [data-testid="venue-chart"]'); b.click(); return b.closest("tr").children[2].textContent; })()`,
+  );
+  await until(win.webContents, `window.__ocDesktop.selected() !== ${JSON.stringify(before)}`, 60_000);
+  const after = await selected();
+  const chart = await win.webContents.executeJavaScript(`window.__ocDesktop.smokeChart(${JSON.stringify(after)})`);
+  out.markets.dexOpened = { pair, before, after, candles: chart?.candles ?? 0, error: chart?.error };
+  for (const tab of ["forex", "stocks"]) {
     await m.executeJavaScript(`document.querySelector('[data-tab="${tab}"]').click()`);
     const ok = await until(m, `document.querySelectorAll('[data-testid="market-table"] tbody tr').length > 20`, 40_000);
     await until(m, `${topSparks}.length >= 10`, 30_000);
     await wait(1500);
     out.markets[tab] = { ok, count: await count(), rows: await rows(), sparks: await sparks() };
-    if (tab === "pairs") {
-      await m.executeJavaScript(`document.querySelector('[data-period="1w"]').click()`);
-      await wait(12_000);
-      out.markets.pairs.weekChanges = await m.executeJavaScript(
-        `[...document.querySelectorAll('[data-testid="market-table"] tbody tr')].slice(0, 30).filter((r) => /%$/.test(r.children[5]?.textContent ?? "")).length`,
-      );
-      await m.executeJavaScript(`document.querySelector('[data-period="1d"]').click()`);
-    }
     await shot(m, `smoke-markets-${tab}.png`);
   }
   return out;
@@ -820,8 +861,7 @@ function runSmoke() {
     const second = await text();
     const canvases = await win.webContents.executeJavaScript("document.querySelectorAll('canvas').length");
     fs.mkdirSync(smokeOut, { recursive: true });
-    const image = await win.webContents.capturePage();
-    fs.writeFileSync(path.join(smokeOut, `smoke-${settings.dataSource}.png`), image.toPNG());
+    await saveShot(win.webContents, `smoke-${settings.dataSource}.png`);
 
     const symbols = (process.env.OC_SMOKE_SYMBOLS || "").split(",").filter(Boolean);
     let picker = null;
@@ -858,7 +898,7 @@ function runSmoke() {
       picker = await win.webContents.executeJavaScript(
         `[...document.querySelectorAll("span")].filter((s) => /^liq \\$/.test(s.textContent?.trim() ?? "")).length`,
       );
-      fs.writeFileSync(path.join(smokeOut, "smoke-picker.png"), (await win.webContents.capturePage()).toPNG());
+      await saveShot(win.webContents, "smoke-picker.png");
       // The venue chips and badges, with the search cleared.
       await win.webContents.executeJavaScript(`(() => {
         const input = [...document.querySelectorAll("input")].find((i) => i.placeholder.startsWith("Search symbols, forex"));
@@ -866,7 +906,7 @@ function runSmoke() {
         input.dispatchEvent(new Event("input", { bubbles: true }));
       })()`);
       await new Promise((r) => setTimeout(r, 600));
-      fs.writeFileSync(path.join(smokeOut, "smoke-picker-venues.png"), (await win.webContents.capturePage()).toPNG());
+      await saveShot(win.webContents, "smoke-picker-venues.png");
       venues = await win.webContents.executeJavaScript(`({
         chips: [...document.querySelectorAll("[data-venue-chip]")].map((b) => b.dataset.venueChip),
         badges: [...new Set([...document.querySelectorAll("[data-venue]")].map((b) => b.dataset.venue))],
@@ -884,15 +924,14 @@ function runSmoke() {
       const r = await win.webContents.executeJavaScript(`window.__ocDesktop.smokeChart(${JSON.stringify(name)})`);
       await wait(7000);
       r.ticks = await win.webContents.executeJavaScript(`window.__ocDesktop.tickCount(${JSON.stringify(name)})`);
-      const shot = await win.webContents.capturePage();
-      fs.writeFileSync(path.join(smokeOut, `smoke-${name.replace(/[^\w.-]+/g, "_")}.png`), shot.toPNG());
+      await saveShot(win.webContents, `smoke-${name.replace(/[^\w.-]+/g, "_")}.png`);
       charted.push(r);
     }
 
     let draw = null;
     if (process.env.OC_SMOKE_DRAW) {
       draw = await smokeDraw(JSON.parse(process.env.OC_SMOKE_DRAW)).catch((err) => ({ missing: [], problems: [String(err.message || err)] }));
-      fs.writeFileSync(path.join(smokeOut, "smoke-draw.png"), (await win.webContents.capturePage()).toPNG());
+      await saveShot(win.webContents, "smoke-draw.png");
     }
 
     const gate = process.env.OC_SMOKE_GATE ? await smokeGate().catch((err) => ({ error: String(err.message || err) })) : null;
@@ -971,11 +1010,20 @@ function runSmoke() {
       (dash.portfolio?.walletOk &&
         dash.portfolio.connect.length >= 5 &&
         dash.markets?.crypto?.ok &&
-        ["pairs", "forex", "stocks"].every((t) => dash.markets[t]?.ok) &&
-        dash.markets.pairs.weekChanges > 5 &&
+        ["forex", "stocks"].every((t) => dash.markets[t]?.ok) &&
         ["1d", "1w", "1m", "1y"].every((p) => dash.markets.charts?.[p]?.drawn >= 12) &&
         new Set(["1d", "1w", "1m", "1y"].map((p) => dash.markets.charts[p].first)).size > 1 &&
-        ["pairs", "forex", "stocks"].every((t) => dash.markets[t].sparks?.drawn >= 10) &&
+        ["forex", "stocks"].every((t) => dash.markets[t].sparks?.drawn >= 10) &&
+        dash.markets.venues?.exchanges >= 12 &&
+        dash.markets.venues.dexLiq >= 8 &&
+        dash.markets.venues.gaps >= 5 &&
+        dash.markets.venues.dexOnly >= 10 &&
+        dash.markets.expanded?.cex >= 3 &&
+        dash.markets.expanded.dex >= 1 &&
+        dash.markets.dexOpened?.after !== dash.markets.dexOpened?.before &&
+        dash.markets.dexOpened.candles > 0 &&
+        // DEX pools trade under names like "WBTC/WETH", without an exchange prefix.
+        /^[^:]+\/[^:]+$/.test(dash.markets.dexOpened?.after ?? "") &&
         dash.portfolio.hscroll?.ok &&
         dash.markets.crypto.hscroll?.ok &&
         dash.markets.crypto.hscroll.firstCellLeft === 0 &&

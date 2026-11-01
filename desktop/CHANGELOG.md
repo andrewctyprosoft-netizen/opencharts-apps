@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Market overview: one Crypto tab for centralised and decentralised markets.** Crypto, Crypto pairs and DEX are merged. Each of the 1,000 coins shows the exchanges listing it, its DEX liquidity and 24h volume across eleven chains (DexScreener, matched by contract address), and the gap between its DEX and exchange prices. Click a coin's name to see every exchange pair and its most liquid DEX pools, each with a Chart button. Trending GeckoTerminal pools whose token is not among the coins appear as "DEX only" rows, with instant day lines from their reported 24 h, 6 h, 1 h, 30, 15 and 5-minute changes. A DEX pool's Chart button adds the pool to the symbol list and charts it in the main window.
+- **Fixed: a blank chart after switching to a slow-loading symbol.** While the new symbol's bars loaded, the chart showed the previous symbol's bars under the new name, then treated the real bars as a refresh and kept the old view, so it stayed blank until the timeframe changed. Now the chart empties on the switch and draws the new symbol as soon as its bars arrive; most visible with DEX pools, whose bars can take half a minute when GeckoTerminal is busy.
+- **GeckoTerminal requests pace themselves.** The free API now allows a burst of about five calls, then about five a minute; the request queue widens its gap after each rate limit (up to 12 s), narrows it again as calls succeed, and retries a rate-limited call up to three times before failing. DEX price polls, searches and charts in the main window benefit too.
+- Tests: coin tokens per chain, DEX pool parsing and totals, venues per coin, DEX-only rows, the instant day line; the GeckoTerminal queue's retry and priority order (73 in total); smoke `dash` checks the venue columns, DEX-only rows, a coin's expanded pairs and pools, and that a pool's Chart button charts it. Smoke screenshots that Electron cannot capture no longer fail any scenario.
+
 ## 0.6.1 — 2026-11-01
 
 - **Market overview row charts.** The chart icon column is now a real price line per row (140 × 34 px, 92 × 30 on phones), green or red with a fading fill, in every tab. It follows the **Change over** period: Day (15-minute bars), Week (hourly; CoinGecko's 7-day line for coins), Month (4-hour bars), Year and Custom (daily closes). Rows load their line as they scroll into view; Refresh redraws them; a click still opens the pair in the main window.

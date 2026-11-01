@@ -120,6 +120,15 @@ export function createGeckoSource(bridge: DesktopBridge, store: KeyValueStore, t
       return parsePools(json).sort((a, b) => b.liquidityUsd - a.liquidityUsd);
     },
 
+    /** One pool by network and address, for a pool picked in the market overview. */
+    lookup: async (network: string, address: string): Promise<DexPool | null> => {
+      const json = await bridge.gecko.get(
+        `/networks/${network}/pools/${encodeURIComponent(address)}?include=base_token,quote_token,dex`,
+        "high",
+      );
+      return parsePools(json)[0] ?? null;
+    },
+
     savedName: (pool: Pick<DexPool, "network" | "address">) =>
       saved.find((p) => p.network === pool.network && p.address.toLowerCase() === pool.address.toLowerCase())?.name ??
       null,

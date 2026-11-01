@@ -30,7 +30,7 @@ With an OANDA token, forex and metals come from OANDA instead.
 - **File › Dashboard › Portfolio**: balances and open orders (with cancel) on every exchange with a key and on OANDA, plus on-chain wallets by address (EVM chains, Solana, Bitcoin), totals and allocation.
 - **Price alerts**: right-click a price on the chart › **Set alert**; the **Alerts** tab under the chart lists them, each firing once or every time the price crosses, with a Windows notification, sound and toast.
 - **File › Dashboard › Alerts & positions**: one window for every alert, every open position and order across the paper account, the exchanges and OANDA, with close and cancel.
-- **File › Dashboard › Market overview**: Crypto (top 1,000 coins), Crypto pairs (2,400 exchange pairs), Forex & metals and Stocks (500 largest companies) tables, with changes over a day, week, month, year or custom dates, min/max ranges for volume, market cap and change, sorting both ways, and a custom condition over any column.
+- **File › Dashboard › Market overview**: Crypto (top 1,000 coins with their exchange pairs and DEX pools, plus trending DEX-only tokens), Forex & metals and Stocks (500 largest companies) tables, with changes over a day, week, month, year or custom dates, min/max ranges for volume, market cap and change, sorting both ways, and a custom condition over any column.
 - **DEX search** inside the symbol picker: type a token name, ticker or contract address to search pools on every chain, sorted by liquidity; click one to add and chart it, or the bin icon to remove it.
 - Paper trading (for pairs without a key, DEX pools and the demo) on a $100,000 simulated account against the live prices: market, limit and stop orders, take-profit and stop-loss, live P&L.
   Forex lots are 100,000 units, gold 100 oz, silver 5,000 oz; DEX lots are sized to about $100–$1,000.
@@ -107,6 +107,14 @@ The **Condition** box filters on any column, for example `change > 5 and volume 
 The **Chart** column at the right draws each row's price line over the chosen period (day, week, month, year or the custom dates), green when it ended higher and red when lower, so you can scan for breakouts while scrolling.
 Day, week and month lines are intraday (15-minute, hourly and 4-hour bars; CoinGecko's 7-day line for coins), year and custom lines are daily closes; only rows on screen load theirs, and Refresh redraws them.
 Click a row's chart to open that pair in the main window.
+The **Crypto** tab shows where each coin trades, centralised and decentralised:
+- **Exchanges**: the exchanges switched on that list the coin (`BIN OKX BYB KUC CB MEXC`), matched by ticker; the row chart and its click use the busiest pair.
+- **DEX liquidity**, **DEX vol 24h**: totals over the coin's DEX pools on Ethereum, Solana, BNB Chain, Base, Arbitrum, Polygon, Avalanche, Optimism, TON, Sui and Tron (DexScreener, matched by contract address; BTC, ETH, SOL, BNB and AVAX through their wrapped tokens). They load for the rows on screen, so sorting on them covers the rows already scrolled past.
+- **CEX/DEX gap**: how far the most liquid DEX pool's price is from the busiest exchange pair, in percent.
+- Click a coin's name to open its venues: every exchange pair (price, 24h change, volume, spread) and its most liquid DEX pools (chain, DEX, pair, price, liquidity, volume), each with a **Chart** button.
+- Trending pools from GeckoTerminal whose token is not among the 1,000 coins are added as **DEX only** rows (most have no market cap and sort last: filter with `exchanges contains "DEX only"`); their day lines are drawn at once from the pool's reported changes, while week and longer lines fill in slowly (GeckoTerminal's free API allows about five calls a minute).
+- A DEX pool's **Chart** button adds the pool to the symbol list (like **DEX pools** in the symbol search) and charts it; when GeckoTerminal is busy the pool's bars can take half a minute.
+Try `change > 5 and dex_liq > 1M and exchanges contains "BIN"`, or sort by `CEX/DEX gap`.
 The table is wider than most windows: drag the scrollbar under it, or hold Shift and turn the mouse wheel. The rank and name columns stay pinned.
 
 ### Optional: OANDA Instead

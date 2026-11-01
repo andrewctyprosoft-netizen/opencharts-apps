@@ -617,6 +617,14 @@ function liveBarFrom(live: LiveCandleData): CandlestickData<Time> | null {
   return { time: ts as Time, open: live.open, high: live.high, low: live.low, close: live.close };
 }
 
+/** Empties the chart and its legend; ticks then wait for history (applyTick needs a last bar). */
+function clearBars(ctx: RtCtx): void {
+  ctx.series.setData([]);
+  ctx.volume?.setData([]);
+  ctx.lastCandle.current = null;
+  ctx.setLegend(null);
+}
+
 function legendFromSeries(
   chartData: CandlestickData<Time>[],
   volumeData: HistogramData<Time>[],
@@ -1866,9 +1874,16 @@ export function ChartPanel({
   // Update candle data from server (historical fetch / periodic sync)
   useEffect(() => {
     const series = candleSeriesRef.current;
-    if (!series || chartData.length === 0) return;
-    const ctx = makeRtCtx(series);
+    if (!series) return;
     const loadKey = `${selectedSymbol}:${timeframe}`;
+    if (chartData.length === 0) {
+      // OpenCharts Desktop patch: while a new symbol's bars load (half a minute for a busy DEX
+      // feed), show an empty chart, not the previous symbol's bars under the new name. Ticks wait
+      // for history (applyTick needs a last bar); the real bars then load as a new chart.
+      if (lastLoadKeyRef.current !== loadKey && lastCandleRef.current) clearBars(makeRtCtx(series));
+      return;
+    }
+    const ctx = makeRtCtx(series);
     const isNewChart = lastLoadKeyRef.current !== loadKey;
 
     series.setData(chartData);
@@ -1879,7 +1894,7 @@ export function ChartPanel({
     // sync around it would buy nothing but risk.
     // eslint-disable-next-line react-hooks/immutability
     lastCandleRef.current = chartData[chartData.length - 1] ?? null;
-    setLegend(legendFromSeries(chartData, volumeData));
+    ctx.setLegend(legendFromSeries(chartData, volumeData));
 
     const buffered = latestLiveCandleRef.current;
     if (!isNewChart) {

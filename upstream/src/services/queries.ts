@@ -144,7 +144,11 @@ export function useCandles(
     // limit in the key) is in-flight. Without this, switching from firstPaint
     // → deep limit causes a momentary empty array, which lets a live WS candle
     // paint as the only bar before history arrives.
-    placeholderData: (prev) => prev,
+    // OpenCharts Desktop patch: only for the same symbol and timeframe. Another symbol's bars,
+    // shown while a slow feed (GeckoTerminal) loads, counted as the new chart's first load, so
+    // the real bars arrived as a mere refresh and the chart stayed on the old view, blank.
+    placeholderData: (prev, prevQuery) =>
+      prevQuery?.queryKey[1] === symbol && prevQuery.queryKey[2] === timeframe ? prev : undefined,
     // When the server signals the response is partial (backfill queued), poll
     // at 3 s until data fills in. Otherwise use the 5-min safety-net cadence.
     refetchInterval: (query) => (query.state.data?.metadata?.isPartial ? 3_000 : 5 * 60_000),

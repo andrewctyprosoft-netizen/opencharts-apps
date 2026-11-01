@@ -6,7 +6,7 @@ One APK, sideloaded; no account and no server.
 
 ## Install
 
-1. Download `OpenCharts-0.6.0.apk` from the [Releases](../../../releases/latest) page on the phone, or copy it there (USB, Drive, email).
+1. Download `OpenCharts-0.6.1.apk` from the [Releases](../../../releases/latest) page on the phone, or copy it there (USB, Drive, email).
 2. Open it. Android asks to allow installs from that app (Files, Chrome …) once: allow, then **Install**.
 3. Open **OpenCharts**. It needs Android 7.0 or newer.
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 2026-11-01
+## 0.6.1 — 2026-11-01
 
 - **Launcher icon fixed.** A leftover Capacitor template icon (`drawable-v24`) overrode the OpenCharts icon on every Android 7+ phone; it is removed, and `dev/tools/make-icons.py` now deletes it if Capacitor puts it back.
 - **Market overview row charts** (from OpenCharts Desktop): each row shows its price line for the chosen period, green or red, sized for a phone (92 × 30).

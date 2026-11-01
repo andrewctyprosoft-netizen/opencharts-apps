@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 2026-11-01
+## 0.6.1 — 2026-11-01
 
 - **Market overview row charts.** The chart icon column is now a real price line per row (140 × 34 px, 92 × 30 on phones), green or red with a fading fill, in every tab. It follows the **Change over** period: Day (15-minute bars), Week (hourly; CoinGecko's 7-day line for coins), Month (4-hour bars), Year and Custom (daily closes). Rows load their line as they scroll into view; Refresh redraws them; a click still opens the pair in the main window.
 - Coins not on Binance now get history (and charts) from Bybit or OKX.

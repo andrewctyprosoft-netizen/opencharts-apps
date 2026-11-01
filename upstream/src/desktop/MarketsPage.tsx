@@ -3,6 +3,7 @@ import {
   ArrowUpNarrowWide,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
   HelpCircle,
   Loader2,
   RefreshCw,
@@ -17,6 +18,7 @@ import {
   parseKlines,
   parseMarkets,
 } from "../../../adapters/cex-map.ts";
+import { tradeLink, walletLinks } from "../../../adapters/dex-links.ts";
 import { FX_INSTRUMENTS, yahooSymbol } from "../../../adapters/fx-map.ts";
 import { ohlcvPath, parseOhlcv } from "../../../adapters/gecko-map.ts";
 import {
@@ -1240,6 +1242,10 @@ function Venues({
 }) {
   const head = "px-2 py-1 font-medium text-muted-foreground text-left whitespace-nowrap";
   const num = "px-2 py-1 text-right font-mono tabular-nums whitespace-nowrap";
+  const btn = "inline-flex items-center gap-1 px-2 py-0.5 rounded border border-border hover:bg-secondary";
+  const mobile = isMobileApp();
+  // Phones: the pool whose "open in" list is showing.
+  const [picking, setPicking] = useState<string | null>(null);
   const open = (chart: string | null, kind: string, label: string) =>
     chart ? (
       <button
@@ -1247,16 +1253,17 @@ function Venues({
         data-testid="venue-chart"
         data-kind={kind}
         onClick={() => onOpen(chart)}
-        className="px-2 py-0.5 rounded border border-border hover:bg-secondary"
+        className={btn}
         title={`Open ${label} on the chart`}
       >
         Chart
       </button>
     ) : null;
   return (
-    // Window-wide and pinned left, so it stays in view while the wide table scrolls sideways.
+    // Window-wide and pinned left, so it stays in view while the wide table scrolls sideways; each
+    // venue table scrolls on its own when wider than the window (phones).
     <div className="sticky left-0 w-[calc(100vw-1rem)] flex flex-wrap gap-x-8 gap-y-3 px-4 py-3">
-      <section>
+      <section className="max-w-full overflow-x-auto">
         <div className="mb-1 font-medium">Exchanges ({cex.length})</div>
         {cex.length ? (
           <table className="text-[12px]">
@@ -1289,7 +1296,7 @@ function Venues({
           <div className="text-muted-foreground">Not listed on the exchanges switched on.</div>
         )}
       </section>
-      <section>
+      <section className="max-w-full overflow-x-auto">
         <div className="mb-1 font-medium">DEX pools ({dex?.length ?? "…"})</div>
         {noTokens ? (
           <div className="text-muted-foreground">No token on the supported chains.</div>
@@ -1309,21 +1316,70 @@ function Venues({
                 <th className={cn(head, "text-right")}>Liquidity</th>
                 <th className={cn(head, "text-right")}>Volume 24h</th>
                 <th />
+                <th />
               </tr>
             </thead>
             <tbody>
-              {dex.map((v, i) => (
-                <tr key={`${v.chart ?? v.pair}:${i}`} data-venue="dex">
-                  <td className="px-2 py-1">{v.chain}</td>
-                  <td className="px-2 py-1">{v.dex}</td>
-                  <td className="px-2 py-1">{v.pair}</td>
-                  <td className={num}>{fmtPrice(v.price)}</td>
-                  <td className={cn(num, pctClass(v.change))}>{v.change == null ? "—" : fmtPct(v.change)}</td>
-                  <td className={num}>{fmtUsd(v.liquidity, 1e5)}</td>
-                  <td className={num}>{fmtUsd(v.volume, 1e5)}</td>
-                  <td className="px-2 py-1">{open(v.chart, "dex", `${v.pair} on ${v.dex}`)}</td>
-                </tr>
-              ))}
+              {dex.map((v, i) => {
+                const key = `${v.chart ?? v.pair}:${i}`;
+                const link = tradeLink(v);
+                const note = link
+                  ? `Opens ${link.site}. You connect your own wallet and trade there; OpenCharts does not see, sign or route the trade.`
+                  : "";
+                return (
+                  <Fragment key={key}>
+                    <tr data-venue="dex">
+                      <td className="px-2 py-1">{v.chain}</td>
+                      <td className="px-2 py-1">{v.dex}</td>
+                      <td className="px-2 py-1">{v.pair}</td>
+                      <td className={num}>{fmtPrice(v.price)}</td>
+                      <td className={cn(num, pctClass(v.change))}>{v.change == null ? "—" : fmtPct(v.change)}</td>
+                      <td className={num}>{fmtUsd(v.liquidity, 1e5)}</td>
+                      <td className={num}>{fmtUsd(v.volume, 1e5)}</td>
+                      <td className="px-2 py-1">{open(v.chart, "dex", `${v.pair} on ${v.dex}`)}</td>
+                      <td className="px-2 py-1">
+                        {!link ? null : mobile ? (
+                          <button
+                            type="button"
+                            data-testid="venue-trade"
+                            onClick={() => setPicking(picking === key ? null : key)}
+                            className={btn}
+                            title={note}
+                          >
+                            Trade <ChevronDown className="h-3 w-3" />
+                          </button>
+                        ) : (
+                          <a data-testid="venue-trade" href={link.url} target="_blank" rel="noopener noreferrer" className={btn} title={note}>
+                            Trade <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </td>
+                    </tr>
+                    {link && picking === key && (
+                      <tr data-testid="trade-chooser">
+                        <td colSpan={9} className="px-2 pb-2">
+                          {/* Pinned to the screen width, so it wraps on a phone while the table scrolls. */}
+                          <div className="sticky left-2 max-w-[calc(100vw-3rem)]">
+                            <div className="flex flex-wrap gap-1.5">
+                              <a href={link.url} target="_blank" rel="noopener noreferrer" className={btn} data-wallet="browser">
+                                {link.site} in browser
+                              </a>
+                              {walletLinks(link.url, v.chainId).map((w) => (
+                                <a key={w.id} href={w.url} target="_blank" rel="noopener noreferrer" className={btn} data-wallet={w.id}>
+                                  {w.name}
+                                </a>
+                              ))}
+                            </div>
+                            <div className="mt-1 max-w-[36rem] text-muted-foreground">
+                              {note} A wallet opens the page in its own browser.
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         ) : (

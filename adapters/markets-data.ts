@@ -276,6 +276,12 @@ export interface DexVenue {
   change: number | null;
   /** `dex:<GeckoTerminal network>:<pool address>`, or null on a chain GeckoTerminal is not mapped for. */
   chart: string | null;
+  /** What a link to the DEX's own swap page needs: DexScreener chain and DEX ids, token and pool addresses. */
+  chainId: string;
+  dexId: string;
+  baseAddress: string;
+  quoteAddress: string;
+  pool: string;
 }
 
 const sameAddress = (a: string, b: string) => (a.startsWith("0x") ? a.toLowerCase() === b.toLowerCase() : a === b);
@@ -286,7 +292,7 @@ export function parseTokenPairs(json: unknown, token: CoinToken): DexVenue[] {
   const out: DexVenue[] = [];
   type Pair = {
     baseToken?: { address?: unknown; symbol?: unknown };
-    quoteToken?: { symbol?: unknown };
+    quoteToken?: { address?: unknown; symbol?: unknown };
     priceUsd?: unknown;
     pairAddress?: unknown;
     dexId?: unknown;
@@ -309,6 +315,11 @@ export function parseTokenPairs(json: unknown, token: CoinToken): DexVenue[] {
       volume: n(p.volume?.h24) ?? 0,
       change: n(p.priceChange?.h24),
       chart: chain && pool ? dexChartId(chain.gt, pool) : null,
+      chainId: token.chain,
+      dexId: String(p.dexId ?? ""),
+      baseAddress: String(p.baseToken?.address ?? ""),
+      quoteAddress: String(p.quoteToken?.address ?? ""),
+      pool,
     });
   }
   return out.sort((a, b) => b.liquidity - a.liquidity);

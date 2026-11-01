@@ -256,6 +256,19 @@ async function main() {
   await panel(`d.querySelector('[data-testid="market-venues"]').scrollIntoView()`);
   await wait(800);
   shot("10c-markets-venues");
+  // A pool's Trade button lists its swap page and the wallets that can open it; nothing is opened.
+  // The button must be reachable on screen: the pool table scrolls sideways inside the panel.
+  const onScreen = await panel(
+    `(() => { const b = d.querySelector('[data-testid="market-venues"] [data-testid="venue-trade"]'); b.scrollIntoView({ block: "center", inline: "center" }); const r = b.getBoundingClientRect(); return r.left >= 0 && r.right <= d.documentElement.clientWidth; })()`,
+  );
+  await panel(`d.querySelector('[data-testid="market-venues"] [data-testid="venue-trade"]').click()`);
+  await wait(500);
+  r.trade = await panel(
+    `(() => { const a = [...d.querySelectorAll('[data-testid="trade-chooser"] a[data-wallet]')]; a[0]?.scrollIntoView({ block: "center" }); return { wallets: a.map((x) => x.dataset.wallet), https: a.length > 0 && a.every((x) => x.href.startsWith("https://")) }; })()`,
+  );
+  r.trade.onScreen = onScreen;
+  await wait(400);
+  shot("10d-markets-trade");
   const before = await js("window.__ocDesktop.selected()");
   // The chart's legend (open price of the last bar) changes once the pool's own bars are drawn.
   const legend = `document.body.innerText.match(/\\d+m\\s+O\\s+([\\d.,]+)/)?.[1] ?? ""`;
@@ -322,6 +335,7 @@ async function main() {
     markets: (r.markets ?? 0) > 20,
     marketCharts: (r.marketCharts?.day ?? 0) >= 8 && (r.marketCharts?.month ?? 0) >= 8,
     marketDex: r.marketVenues?.cex >= 3 && r.marketVenues.dex >= 1 && r.dexOpened?.panels === 0 && r.dexOpened.candles > 0 && r.dexOpened.drew && r.dexOpened.after !== r.dexOpened.before && /^[^:]+\/[^:]+$/.test(r.dexOpened.after ?? ""),
+    marketTrade: Boolean(r.trade?.https && r.trade.onScreen && r.trade.wallets[0] === "browser" && r.trade.wallets.length >= 3),
     portfolio: (r.portfolio ?? 0) >= 5,
     desk: Boolean(r.desk?.live?.startsWith("Terminal running")),
     keysPage: r.keysPage?.tabs === 7 && r.keysPage.active === "OKX",

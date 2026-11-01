@@ -36,7 +36,7 @@ Get the latest build from [Releases](../../releases/latest):
 | Paper trading with take profit, stop loss, live P&L | ✓ | ✓ |
 | Price alerts (once or every time), notifications | ✓ Windows | ✓ Android |
 | Portfolio: exchange balances, open orders, on-chain wallets | ✓ | ✓ |
-| Market overview: 1,000 coins with their exchange pairs and DEX pools, trending DEX tokens, forex, 500 stocks, custom conditions | ✓ | ✓ |
+| Market overview: 1,000 coins with their exchange pairs and DEX pools (Trade opens the DEX's own swap page), trending DEX tokens, forex, 500 stocks, custom conditions | ✓ | ✓ |
 | 8 indicators, 80+ drawing tools, templates, replay, journal | ✓ | ✓ (touch drawing bar) |
 
 Details: [desktop/README.md](desktop/README.md) and [android/README.md](android/README.md).

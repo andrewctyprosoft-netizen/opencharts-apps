@@ -114,6 +114,7 @@ The **Crypto** tab shows where each coin trades, centralised and decentralised:
 - Click a coin's name to open its venues: every exchange pair (price, 24h change, volume, spread) and its most liquid DEX pools (chain, DEX, pair, price, liquidity, volume), each with a **Chart** button.
 - Trending pools from GeckoTerminal whose token is not among the 1,000 coins are added as **DEX only** rows (most have no market cap and sort last: filter with `exchanges contains "DEX only"`); their day lines are drawn at once from the pool's reported changes, while week and longer lines fill in slowly (GeckoTerminal's free API allows about five calls a minute).
 - A DEX pool's **Chart** button adds the pool to the symbol list (like **DEX pools** in the symbol search) and charts it; when GeckoTerminal is busy the pool's bars can take half a minute.
+- A DEX pool's **Trade** button opens that DEX's own swap page (Uniswap, PancakeSwap, Jupiter, Raydium, STON.fi, Cetus…) in your browser with the pair filled in. You connect your own wallet and trade there; OpenCharts does not see, sign or route the trade and charges nothing. Link formats: [docs/dex-trade-links.md](docs/dex-trade-links.md).
 Try `change > 5 and dex_liq > 1M and exchanges contains "BIN"`, or sort by `CEX/DEX gap`.
 The table is wider than most windows: drag the scrollbar under it, or hold Shift and turn the mouse wheel. The rank and name columns stay pinned.
 

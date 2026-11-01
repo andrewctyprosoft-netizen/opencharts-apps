@@ -3,9 +3,11 @@
 ## Unreleased
 
 - **Market overview: one Crypto tab** (from OpenCharts Desktop): each coin with the exchanges listing it, its DEX liquidity, volume and CEX/DEX price gap; tap a coin's name for its exchange pairs and DEX pools; trending DEX-only tokens as extra rows. Tapping a pool's Chart adds it and opens it on the Chart tab.
+- **Trade on the DEX's own site.** Each DEX pool in an expanded coin has a **Trade** button: open the DEX's swap page with the pair filled in, either in the phone's browser or inside a wallet app's browser (MetaMask, Phantom, Trust Wallet, Coinbase Wallet, OKX Wallet, Tonkeeper or Slush, as fits the chain). The user connects and trades there; OpenCharts only opens the link.
+- Fixed: an opened coin's exchange and DEX tables were cut off at the screen edge (Spread, Chart and Trade out of reach); each now swipes sideways on its own.
 - Fixed: the chart could stay blank after switching to a slow-loading symbol (a DEX pool) until the timeframe changed; it now empties on the switch and draws once the bars arrive.
 - GeckoTerminal requests pace themselves under the free API's limit and retry after a rate limit.
-- Smoke: opens the first coin's venues and checks that tapping a DEX pool charts it.
+- Smoke: opens the first coin's venues, checks a pool's Trade list (browser plus wallets, all https) and that tapping a DEX pool charts it.
 
 ## 0.6.1 — 2026-11-01
 

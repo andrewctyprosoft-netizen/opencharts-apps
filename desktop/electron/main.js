@@ -819,6 +819,15 @@ async function smokeDash() {
     dex: document.querySelectorAll('[data-testid="market-venues"] [data-venue="dex"]').length,
   })`);
   await shot(m, "smoke-markets-venues.png");
+  // DEX pools link to the DEX's own swap page; nothing is clicked, so no browser opens.
+  out.markets.trade = await m.executeJavaScript(`(() => {
+    const links = [...document.querySelectorAll('[data-testid="market-venues"] a[data-testid="venue-trade"]')];
+    return {
+      links: links.length,
+      hosts: [...new Set(links.map((a) => new URL(a.href).host))],
+      https: links.length > 0 && links.every((a) => a.href.startsWith("https://") && a.target === "_blank"),
+    };
+  })()`);
   // A DEX pool's chart button adds the pool to the terminal and charts it there.
   const selected = () => win.webContents.executeJavaScript("window.__ocDesktop.selected()");
   const before = await selected();
@@ -1020,6 +1029,7 @@ function runSmoke() {
         dash.markets.venues.dexOnly >= 10 &&
         dash.markets.expanded?.cex >= 3 &&
         dash.markets.expanded.dex >= 1 &&
+        dash.markets.trade?.https &&
         dash.markets.dexOpened?.after !== dash.markets.dexOpened?.before &&
         dash.markets.dexOpened.candles > 0 &&
         // DEX pools trade under names like "WBTC/WETH", without an exchange prefix.

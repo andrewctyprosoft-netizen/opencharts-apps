@@ -1,7 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { changeBetween, compileCondition, inRange, parseAmount, sortRows, type Row } from "../../../adapters/market-filter.ts";
-import { COIN_COLUMNS, changeOverDays, fxRows, pairRows, parseCoins, parseSpark, parseStocks } from "../../../adapters/markets-data.ts";
+import {
+  CHART_SPECS,
+  COIN_COLUMNS,
+  changeOverDays,
+  closesBetween,
+  coingeckoUrl,
+  fxRows,
+  pairRows,
+  parseCoinSparks,
+  parseCoins,
+  parseSpark,
+  parseStocks,
+  sparkPaths,
+  sparkUrl,
+} from "../../../adapters/markets-data.ts";
 import {
   applyJupiter,
   balanceOfData,
@@ -94,6 +108,31 @@ test("overview rows: CoinGecko, pairs, Yahoo spark and screener", () => {
   const stocks = parseStocks({ finance: { result: [{ quotes: [{ symbol: "AAPL", shortName: "Apple Inc.", regularMarketPrice: 344.63, regularMarketChangePercent: -1.2, fiftyTwoWeekChangePercent: 27.4, marketCap: 5e12, regularMarketVolume: 6e7, averageDailyVolume3Month: 5e7, trailingPE: 40, averageAnalystRating: "2.0 - Buy", fullExchangeName: "NasdaqGS" }] }] } }, 250);
   assert.deepEqual([stocks[0]!.rank, stocks[0]!.chg_1y, stocks[0]!.rating, stocks[0]!.exchange], [251, 27.4, "2.0 - Buy", "NasdaqGS"]);
   assert.ok(Math.abs((stocks[0]!.rel_volume as number) - 1.2) < 1e-9);
+});
+
+test("row charts: CoinGecko week line, windows, intraday specs and paths", () => {
+  assert.match(coingeckoUrl(1), /sparkline=true/);
+  const [[id, closes]] = parseCoinSparks([{ id: "bitcoin", last_updated: "2026-11-01T00:00:00Z", sparkline_in_7d: { price: [1, null, 3] } }]);
+  const end = Date.parse("2026-11-01T00:00:00Z") / 1000;
+  assert.equal(id, "bitcoin");
+  assert.deepEqual(closes, [[end - 3600, 1], [end, 3]]);
+  assert.deepEqual(parseCoinSparks([{ id: "x" }]), [["x", []]]);
+
+  assert.deepEqual(closesBetween([[1, 10], [2, 20], [3, 30]], 2, 3), [[2, 20], [3, 30]]);
+  assert.match(sparkUrl(["AAPL"], CHART_SPECS["1d"].range, CHART_SPECS["1d"].interval), /range=1d&interval=5m$/);
+  assert.deepEqual(Object.keys(CHART_SPECS), ["1d", "1w", "1m"]);
+
+  // Highest value at the top edge (y = pad), lowest at the bottom; the area closes along the floor.
+  const { line, area } = sparkPaths([1, 3, 2], 100, 20);
+  assert.equal(line, "M0.0,18.0L50.0,2.0L100.0,10.0");
+  assert.ok(area.startsWith(line) && area.endsWith("L100,20L0,20Z"));
+  assert.deepEqual(sparkPaths([5], 100, 20), { line: "", area: "" });
+  // Flat lines sit in the middle; long series keep at most about one point per pixel and their last value.
+  assert.equal(sparkPaths([2, 2], 10, 20).line, "M0.0,10.0L10.0,10.0");
+  const long = Array.from({ length: 1000 }, (_, i) => i);
+  const pts = sparkPaths(long, 100, 20).line.split("L");
+  assert.ok(pts.length <= 102);
+  assert.equal(pts.at(-1), "100.0,2.0");
 });
 
 test("wallets: address kinds", () => {

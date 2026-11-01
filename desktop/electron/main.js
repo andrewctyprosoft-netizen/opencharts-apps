@@ -612,7 +612,11 @@ async function hScroll(w, selector) {
   })()`);
   await new Promise((r) => setTimeout(r, 800));
   r.stillScrolled = await w.webContents.executeJavaScript(`window.__hbox ? window.__hbox.scrollLeft : 0`);
-  fs.writeFileSync(path.join(smokeOut, `smoke-hscroll-${selector.replace(/\W+/g, "")}.png`), (await w.webContents.capturePage()).toPNG());
+  // The screenshot is a record, not a check (capturePage can answer UnknownVizError).
+  await w.webContents
+    .capturePage()
+    .then((img) => fs.writeFileSync(path.join(smokeOut, `smoke-hscroll-${selector.replace(/\W+/g, "")}.png`), img.toPNG()))
+    .catch((err) => (r.shotError = String(err.message || err)));
   await w.webContents.executeJavaScript(`document.querySelectorAll("*").forEach((e) => { if (e.scrollLeft) e.scrollLeft = 0; })`);
   w.setSize(width, height);
   const fits = r.content <= r.viewport;
@@ -719,6 +723,14 @@ async function smokeDash() {
     return true;
   })()`;
   const out = {};
+  // A screenshot that fails (Electron's capturePage can answer UnknownVizError) is noted, not fatal.
+  const shot = async (wc, name) => {
+    try {
+      fs.writeFileSync(path.join(smokeOut, name), (await wc.capturePage()).toPNG());
+    } catch (err) {
+      (out.shotErrors ??= []).push(`${name}: ${err.message || err}`);
+    }
+  };
 
   const p = openDashboard("portfolio").webContents;
   await new Promise((r) => p.once("did-finish-load", r));
@@ -736,27 +748,44 @@ async function smokeDash() {
   })`);
   out.portfolio.walletOk = walletOk;
   out.portfolio.hscroll = await hScroll(dashboards.get("portfolio"), "[data-wallet-card]");
-  fs.writeFileSync(path.join(smokeOut, "smoke-portfolio.png"), (await p.capturePage()).toPNG());
+  await shot(p, "smoke-portfolio.png");
 
   const m = openDashboard("markets").webContents;
   await new Promise((r) => m.once("did-finish-load", r));
   const count = () => m.executeJavaScript(`document.querySelector('[data-testid="market-count"]')?.textContent ?? ""`);
   const rows = () => m.executeJavaScript(`document.querySelectorAll('[data-testid="market-table"] tbody tr').length`);
+  // Row charts among the first 15 rows: how many are drawn, the column header, and the first line.
+  const topSparks = `[...document.querySelectorAll('[data-testid="market-table"] tbody tr')].slice(0, 15).map((r) => r.querySelector('[data-testid="market-spark"]')).filter(Boolean)`;
+  const sparks = () => m.executeJavaScript(`(() => {
+    const s = ${topSparks};
+    const cells = [...document.querySelectorAll('[data-testid="market-table"] tbody tr')].slice(0, 15).map((r) => r.lastElementChild);
+    return { loading: cells.filter((c) => c?.querySelector(".animate-pulse")).length, empty: cells.filter((c) => c?.textContent === "—").length, drawn: s.length, up: s.filter((x) => x.dataset.trend === "up").length, header: document.querySelector('[data-testid="market-table"] thead th:last-child')?.textContent, first: s[0]?.querySelector("path:last-of-type")?.getAttribute("d")?.length ?? 0 };
+  })()`);
   const crypto = await until(m, `document.querySelectorAll('[data-testid="market-table"] tbody tr').length >= 250`, 40_000);
   await wait(8000); // pages 2–4 of CoinGecko
   out.markets = { crypto: { ok: crypto, count: await count() } };
+  // Each period redraws the row charts: day and month from exchange bars, week from CoinGecko, year from daily closes.
+  out.markets.charts = {};
+  for (const period of ["1d", "1w", "1m", "1y"]) {
+    await m.executeJavaScript(`document.querySelector('[data-period="${period}"]').click()`);
+    await until(m, `${topSparks}.length >= 12`, 45_000);
+    out.markets.charts[period] = await sparks();
+    await shot(m, `smoke-markets-chart-${period}.png`);
+  }
+  await m.executeJavaScript(`document.querySelector('[data-period="1d"]').click()`);
   await m.executeJavaScript(setInput('[data-testid="market-condition"]', "change > 0 and volume > 10M"));
   await wait(500);
   out.markets.crypto.filtered = await count();
   out.markets.crypto.error = await m.executeJavaScript(`document.querySelector('[data-testid="market-condition"]').classList.contains("border-sell")`);
   out.markets.crypto.hscroll = await hScroll(dashboards.get("markets"), '[data-testid="market-table"]');
-  fs.writeFileSync(path.join(smokeOut, "smoke-markets-crypto.png"), (await m.capturePage()).toPNG());
+  await shot(m, "smoke-markets-crypto.png");
   await m.executeJavaScript(setInput('[data-testid="market-condition"]', ""));
   for (const tab of ["pairs", "forex", "stocks"]) {
     await m.executeJavaScript(`document.querySelector('[data-tab="${tab}"]').click()`);
     const ok = await until(m, `document.querySelectorAll('[data-testid="market-table"] tbody tr').length > 20`, 40_000);
+    await until(m, `${topSparks}.length >= 10`, 30_000);
     await wait(1500);
-    out.markets[tab] = { ok, count: await count(), rows: await rows() };
+    out.markets[tab] = { ok, count: await count(), rows: await rows(), sparks: await sparks() };
     if (tab === "pairs") {
       await m.executeJavaScript(`document.querySelector('[data-period="1w"]').click()`);
       await wait(12_000);
@@ -765,7 +794,7 @@ async function smokeDash() {
       );
       await m.executeJavaScript(`document.querySelector('[data-period="1d"]').click()`);
     }
-    fs.writeFileSync(path.join(smokeOut, `smoke-markets-${tab}.png`), (await m.capturePage()).toPNG());
+    await shot(m, `smoke-markets-${tab}.png`);
   }
   return out;
 }
@@ -944,6 +973,9 @@ function runSmoke() {
         dash.markets?.crypto?.ok &&
         ["pairs", "forex", "stocks"].every((t) => dash.markets[t]?.ok) &&
         dash.markets.pairs.weekChanges > 5 &&
+        ["1d", "1w", "1m", "1y"].every((p) => dash.markets.charts?.[p]?.drawn >= 12) &&
+        new Set(["1d", "1w", "1m", "1y"].map((p) => dash.markets.charts[p].first)).size > 1 &&
+        ["pairs", "forex", "stocks"].every((t) => dash.markets[t].sparks?.drawn >= 10) &&
         dash.portfolio.hscroll?.ok &&
         dash.markets.crypto.hscroll?.ok &&
         dash.markets.crypto.hscroll.firstCellLeft === 0 &&

@@ -2,7 +2,6 @@ import {
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
   HelpCircle,
-  LineChart,
   Loader2,
   RefreshCw,
   RotateCcw,
@@ -28,6 +27,7 @@ import {
   sortRows,
 } from "../../../adapters/market-filter.ts";
 import {
+  CHART_SPECS,
   COIN_COLUMNS,
   FX_COLUMNS,
   PAIR_COLUMNS,
@@ -35,9 +35,11 @@ import {
   type Period,
   STOCK_COLUMNS,
   changeOverDays,
+  closesBetween,
   coingeckoUrl,
   fxRows,
   pairRows,
+  parseCoinSparks,
   parseCoins,
   parseSpark,
   parseStocks,
@@ -49,6 +51,7 @@ import { ipcMessage } from "../../../adapters/venues.ts";
 import { cn } from "../lib/utils.ts";
 import { fmtNum, fmtPct, fmtPrice, fmtUsd, pctClass } from "./dash-format.ts";
 import { isMobileApp } from "../mobile/is-mobile.ts";
+import { Sparkline } from "./Sparkline.tsx";
 
 /**
  * OpenCharts Desktop addition: File › Dashboard › Market overview. Lists coins
@@ -146,6 +149,15 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
   const alive = useRef(true);
   const markets = useRef(new Map<string, CexMarket>());
   const binancePairs = useRef<Set<string> | null>(null);
+  // Row charts for the day, week and month views, keyed `${period}:${row id}` (year and custom
+  // charts come from `history`). Only rows on screen are fetched; see `onScreen`.
+  const [charts, setCharts] = useState(() => new Map<string, number[]>());
+  const chartsInflight = useRef(new Set<string>());
+  const coinWeek = useRef(new Map<string, Closes>());
+  const scroller = useRef<HTMLDivElement>(null);
+  const [onScreen, setOnScreen] = useState(() => new Set<string>());
+  const onScreenRef = useRef(onScreen);
+  const view = useRef({ tab, period: "1d" as Period });
 
   const spec = TABS.find((t) => t.id === tab)!;
   const has = (key: string) => spec.columns.some((c) => c.key === key);
@@ -168,6 +180,54 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
       for (const [k, v] of entries) next.set(k, v);
       return next;
     });
+  const addCharts = (entries: Array<[string, number[]]>) =>
+    setCharts((m) => {
+      const next = new Map(m);
+      for (const [k, v] of entries) next.set(k, v);
+      return next;
+    });
+
+  /** A coin's candles from the first exchange that lists it against USDT (Binance, Bybit, OKX). */
+  const coinCandles = useCallback(
+    async (
+      symbol: string,
+      timeframe: string,
+      limit: number,
+    ): Promise<Closes> => {
+      if (!binancePairs.current) {
+        try {
+          const list = (await getJson(
+            "https://api.binance.com/api/v3/ticker/price",
+          )) as Array<{ symbol: string }>;
+          binancePairs.current = new Set(list.map((p) => p.symbol));
+        } catch {
+          binancePairs.current = new Set();
+        }
+      }
+      const candidates: Array<[ExchangeId, string]> = [
+        ...(binancePairs.current.has(`${symbol}USDT`)
+          ? [["binance", `${symbol}USDT`] as [ExchangeId, string]]
+          : []),
+        ["bybit", `${symbol}USDT`],
+        ["okx", `${symbol}-USDT`],
+      ];
+      for (const [ex, native] of candidates) {
+        const request = { symbol: native, timeframe, limit };
+        const url = klineUrl(ex, native, request, Date.now());
+        if (!url) continue;
+        try {
+          const closes = parseKlines(ex, await getJson(url), request).map(
+            (c): [number, number] => [c.time, c.close],
+          );
+          if (closes.length > 1) return closes;
+        } catch {
+          // not listed there; try the next exchange
+        }
+      }
+      return [];
+    },
+    [getJson],
+  );
 
   const load = useCallback(
     async (t: Tab) => {
@@ -185,6 +245,9 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
               },
             );
             rows = rows.concat(parseCoins(reply));
+            // CoinGecko's 7-day hourly line is the week chart, and the day chart when no exchange lists the coin.
+            for (const [id, closes] of parseCoinSparks(reply))
+              if (closes.length > 1) coinWeek.current.set(id, closes);
             patch(t, { rows, loadedAt: Date.now() });
           }
         } else if (t === "pairs") {
@@ -243,6 +306,8 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
 
   const selectTab = (t: Tab) => {
     setTab(t);
+    // The new tab's rows report themselves once drawn; until then its top rows count as on screen.
+    setOnScreen(new Set());
     if (!data[t].loadedAt && !data[t].loading) void load(t);
     // Default sort per tab: by size where there is a size column.
     const cols = TABS.find((x) => x.id === t)!.columns;
@@ -281,7 +346,7 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
   );
 
   // ── Filtering and sorting ──
-  const { shown, total, conditionError, needHistory } = useMemo(() => {
+  const { shown, total, conditionError, needHistory, visible } = useMemo(() => {
     let conditionError = "";
     let pred: (r: Row) => boolean = () => true;
     try {
@@ -321,13 +386,39 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
         pred(r),
     );
     const sorted = sortRows(filtered, sort.key, sort.dir);
-    // Rows still missing a change value for this period, near the top of the current view.
-    const needHistory = sorted
-      .slice(0, HISTORY_ROWS)
-      .filter((r) => r.change === null && !history.has(String(r.id)));
-    return { shown: sorted, total: rows.length, conditionError, needHistory };
+    // Until the observer reports (it waits for the window to paint), the top rows count as on screen.
+    const visible = onScreen.size
+      ? onScreen
+      : new Set(sorted.slice(0, 30).map((r) => String(r.id)));
+    // Rows still missing a change value for this period, near the top of the current view, and
+    // rows on screen whose year or custom chart is drawn from daily closes.
+    const dailyCharts = period === "1y" || period === "custom";
+    const needHistory = sorted.filter(
+      (r, i) =>
+        !history.has(String(r.id)) &&
+        ((i < HISTORY_ROWS && r.change === null) ||
+          (dailyCharts && visible.has(String(r.id)))),
+    );
+    return {
+      shown: sorted,
+      total: rows.length,
+      conditionError,
+      needHistory,
+      visible,
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, tab, changeOf, search, range, sort, condition, spec, history]);
+  }, [
+    data,
+    tab,
+    changeOf,
+    search,
+    range,
+    sort,
+    condition,
+    spec,
+    history,
+    onScreen,
+  ]);
 
   // The visible top rows whose change needs daily history (custom range, or week/month on pairs and stocks).
   const historyKey = needHistory.map((r) => r.id).join(",");
@@ -361,16 +452,6 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
         }
         return;
       }
-      if (tab === "crypto" && !binancePairs.current) {
-        try {
-          const list = (await getJson(
-            "https://api.binance.com/api/v3/ticker/price",
-          )) as Array<{ symbol: string }>;
-          binancePairs.current = new Set(list.map((p) => p.symbol));
-        } catch {
-          binancePairs.current = new Set();
-        }
-      }
       const queue = [...todo];
       const worker = async () => {
         while (queue.length && alive.current) {
@@ -378,19 +459,7 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
           let closes: Closes = [];
           try {
             if (tab === "crypto") {
-              const pair = `${String(r.symbol)}USDT`;
-              if (binancePairs.current?.has(pair)) {
-                const url = klineUrl(
-                  "binance",
-                  pair,
-                  { symbol: pair, timeframe: "1d", limit: 1000 },
-                  Date.now(),
-                )!;
-                closes = parseKlines("binance", await getJson(url), {
-                  symbol: pair,
-                  timeframe: "1d",
-                }).map((c) => [c.time, c.close]);
-              }
+              closes = await coinCandles(String(r.symbol), "1d", 1000);
             } else {
               const m = markets.current.get(String(r.id));
               const url =
@@ -427,12 +496,183 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
     };
   }, []);
 
+  // ── Row charts ──
+  const renderedKey = shown
+    .slice(0, limit)
+    .map((r) => r.id)
+    .join(",");
+  // Rows within a screen of the visible area count as on screen; only they fetch charts.
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    const seen = new Set<string>();
+    let frame = 0;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const id = (e.target as HTMLElement).dataset.rowId!;
+          if (e.isIntersecting) seen.add(id);
+          else seen.delete(id);
+        }
+        clearTimeout(frame);
+        frame = window.setTimeout(
+          () =>
+            setOnScreen((old) =>
+              old.size === seen.size && [...seen].every((id) => old.has(id))
+                ? old
+                : new Set(seen),
+            ),
+          80,
+        );
+      },
+      { root, rootMargin: "100% 0px" },
+    );
+    root
+      .querySelectorAll<HTMLElement>("tr[data-row-id]")
+      .forEach((el) => io.observe(el));
+    return () => {
+      clearTimeout(frame);
+      io.disconnect();
+    };
+    // Re-observe only when the rendered rows change, not on every chart or history update.
+  }, [renderedKey]);
+
+  // What the chart fetches check before each request: still this view, still on screen?
+  useEffect(() => {
+    view.current = { tab, period };
+    onScreenRef.current = visible;
+  }, [tab, period, visible]);
+  const chartSpec =
+    period in CHART_SPECS
+      ? CHART_SPECS[period as keyof typeof CHART_SPECS]
+      : null;
+  /** The row's chart for the current period; undefined while it loads. */
+  const chartOf = (r: Row): number[] | undefined => {
+    const id = String(r.id);
+    if (chartSpec) return charts.get(`${period}:${id}`);
+    const closes = history.get(id);
+    if (!closes) return undefined;
+    const last = closes.at(-1)?.[0] ?? 0;
+    return (
+      period === "1y"
+        ? closesBetween(closes, last - 365 * 86_400, last)
+        : closesBetween(closes, fromSec, toSec)
+    ).map(([, c]) => c);
+  };
+  const needCharts = chartSpec
+    ? shown.filter(
+        (r) =>
+          visible.has(String(r.id)) && !charts.has(`${period}:${String(r.id)}`),
+      )
+    : [];
+  const chartKey = needCharts.map((r) => r.id).join(",");
+  useEffect(() => {
+    if (!chartSpec || !needCharts.length) return;
+    const p = period;
+    const key = (r: Row) => `${p}:${String(r.id)}`;
+    const todo = needCharts.filter((r) => !chartsInflight.current.has(key(r)));
+    if (!todo.length) return;
+    for (const r of todo) chartsInflight.current.add(key(r));
+    // A row that scrolled away, or a view that changed, is skipped; it fetches again when shown.
+    const wanted = (r: Row) =>
+      alive.current &&
+      view.current.tab === tab &&
+      view.current.period === p &&
+      onScreenRef.current.has(String(r.id));
+    const values = (closes: Closes) => closes.map(([, c]) => c);
+
+    void (async () => {
+      if (tab === "stocks" || tab === "forex") {
+        for (let i = 0; i < todo.length; i += 20) {
+          const batch = todo.slice(i, i + 20).filter(wanted);
+          if (!batch.length) continue;
+          const ids = batch.map((r) =>
+            tab === "forex"
+              ? yahooSymbol(
+                  `${String(r.id).slice(0, 3)}_${String(r.id).slice(3)}`,
+                )
+              : String(r.id),
+          );
+          let spark = new Map<string, Closes>();
+          try {
+            spark = parseSpark(
+              await getJson(sparkUrl(ids, chartSpec.range, chartSpec.interval)),
+            );
+          } catch {
+            // the batch's charts stay empty
+          }
+          if (alive.current)
+            addCharts(
+              batch.map((r, k) => [key(r), values(spark.get(ids[k]!) ?? [])]),
+            );
+        }
+        return;
+      }
+      // CoinGecko's week line needs no request.
+      const week =
+        tab === "crypto" && p === "1w"
+          ? todo.filter((r) => coinWeek.current.has(String(r.id)))
+          : [];
+      if (week.length)
+        addCharts(
+          week.map((r) => [
+            key(r),
+            values(coinWeek.current.get(String(r.id))!),
+          ]),
+        );
+      const queue = todo.filter((r) => !week.includes(r));
+      const worker = async () => {
+        while (queue.length) {
+          const r = queue.shift()!;
+          if (!wanted(r)) continue;
+          let closes: Closes = [];
+          try {
+            if (tab === "crypto") {
+              closes = await coinCandles(
+                String(r.symbol),
+                chartSpec.bar,
+                chartSpec.bars,
+              );
+              const gecko = coinWeek.current.get(String(r.id));
+              if (closes.length < 2 && p === "1d" && gecko)
+                closes = gecko.slice(-25);
+            } else {
+              const m = markets.current.get(String(r.id));
+              const request = {
+                symbol: m?.name ?? "",
+                timeframe: chartSpec.bar,
+                limit: chartSpec.bars,
+              };
+              const url =
+                m && klineUrl(m.exchange, m.native, request, Date.now());
+              if (m && url)
+                closes = parseKlines(
+                  m.exchange,
+                  await getJson(url),
+                  request,
+                ).map((c): [number, number] => [c.time, c.close]);
+            }
+          } catch {
+            closes = [];
+          }
+          if (alive.current) addCharts([[key(r), values(closes)]]);
+        }
+      };
+      await Promise.all([worker(), worker(), worker(), worker()]);
+    })().finally(() => {
+      for (const r of todo) chartsInflight.current.delete(key(r));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartKey, period, tab]);
+
   const loadingHistory = period !== "1d" && needHistory.length > 0;
   const current = data[tab];
   const periodLabel =
     period === "custom"
       ? `${from} → ${to}`
       : PERIODS.find((p) => p.id === period)!.label;
+  // Big enough to read a trend at a glance, small enough to keep the table dense; narrower on phones.
+  const spark = mobile ? { w: 92, h: 30 } : { w: 140, h: 34 };
   const columns = spec.columns.map((c) =>
     c.key === "change" ? { ...c, label: `Change (${periodLabel})` } : c,
   );
@@ -501,7 +741,11 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
           {spec.source}
         </span>
         <button
-          onClick={() => void load(tab)}
+          onClick={() => {
+            // Redraw the row charts too: the rows on screen fetch theirs again.
+            setCharts(new Map());
+            void load(tab);
+          }}
           disabled={current.loading}
           title="Refresh"
           className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground disabled:opacity-50"
@@ -732,7 +976,11 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
       )}
 
       {/* Table */}
-      <div className="flex-1 min-h-0 overflow-auto" data-testid="market-scroll">
+      <div
+        ref={scroller}
+        className="flex-1 min-h-0 overflow-auto"
+        data-testid="market-scroll"
+      >
         <table
           className="w-full text-[12px] border-collapse"
           data-testid="market-table"
@@ -758,13 +1006,16 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
                     : ""}
                 </th>
               ))}
-              <th className="sticky right-0 z-[2] bg-card border-b border-border" />
+              <th className="sticky right-0 z-[2] bg-card px-3 py-2 font-medium text-muted-foreground border-b border-border text-left whitespace-nowrap shadow-[inset_1px_0_0_hsl(var(--border))]">
+                Chart · {period === "custom" ? "Custom" : periodLabel}
+              </th>
             </tr>
           </thead>
           <tbody>
             {shown.slice(0, limit).map((r) => (
               <tr
                 key={String(r.id)}
+                data-row-id={String(r.id)}
                 className="group border-b border-border/40 hover:bg-secondary"
               >
                 {columns.map((c, i) => (
@@ -783,17 +1034,25 @@ export function MarketsPage({ bridge }: { bridge: DesktopBridge }) {
                     {cell(c, r[c.key] ?? null)}
                   </td>
                 ))}
-                {/* The chart button stays at the right edge, however far the table scrolls. */}
-                <td className="sticky right-0 z-[1] px-2 text-right bg-background group-hover:bg-secondary">
-                  {r.chart && (
-                    <button
-                      onClick={() => void bridge.app.openChart(String(r.chart))}
-                      title={`Chart ${String(r.chart)}`}
-                      className="p-1 rounded hover:bg-border text-muted-foreground hover:text-foreground"
-                    >
-                      <LineChart className="h-3.5 w-3.5" />
-                    </button>
-                  )}
+                {/* The row chart stays at the right edge, however far the table scrolls; a click opens the full chart. */}
+                <td className="sticky right-0 z-[1] px-3 py-1 bg-background group-hover:bg-secondary shadow-[inset_1px_0_0_hsl(var(--border))]">
+                  <button
+                    type="button"
+                    disabled={!r.chart}
+                    onClick={() => void bridge.app.openChart(String(r.chart))}
+                    title={
+                      r.chart
+                        ? `${String(r.name ?? r.pair ?? r.symbol)} · ${periodLabel} · click to open ${String(r.chart)}`
+                        : `${String(r.name ?? r.symbol)} · ${periodLabel}`
+                    }
+                    className="block rounded enabled:cursor-pointer enabled:hover:ring-1 enabled:hover:ring-border"
+                  >
+                    <Sparkline
+                      values={chartOf(r)}
+                      width={spark.w}
+                      height={spark.h}
+                    />
+                  </button>
                 </td>
               </tr>
             ))}

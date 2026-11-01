@@ -104,7 +104,9 @@ Pick **Day, Week, Month, Year** or **Custom** (from and to dates); the Change co
 Volume, market cap and change take min and max values with K, M, B, T suffixes (`10M`, `1.5B`).
 Click a column header (or use Sort) for high → low and again for low → high.
 The **Condition** box filters on any column, for example `change > 5 and volume > 50M and not symbol contains "usd"` or `pe < 25 and div_yield > 1`; the ? button lists the columns.
-The chart icon on a row charts that pair in the main window.
+The **Chart** column at the right draws each row's price line over the chosen period (day, week, month, year or the custom dates), green when it ended higher and red when lower, so you can scan for breakouts while scrolling.
+Day, week and month lines are intraday (15-minute, hourly and 4-hour bars; CoinGecko's 7-day line for coins), year and custom lines are daily closes; only rows on screen load theirs, and Refresh redraws them.
+Click a row's chart to open that pair in the main window.
 The table is wider than most windows: drag the scrollbar under it, or hold Shift and turn the mouse wheel. The rank and name columns stay pinned.
 
 ### Optional: OANDA Instead

@@ -237,7 +237,15 @@ async function main() {
   await js(`window.ocMobile.openDashboard("markets")`);
   await until(js, `(document.querySelector('.oc-ovl iframe')?.contentDocument?.querySelectorAll('[data-testid="market-table"] tbody tr').length ?? 0) > 20`, 60_000);
   r.markets = await panel(`d.querySelectorAll('[data-testid="market-table"] tbody tr').length`);
+  // Row charts: drawn for the rows on screen, then redrawn for the month view.
+  const drawn = `(document.querySelector('.oc-ovl iframe')?.contentDocument?.querySelectorAll('[data-testid="market-spark"]').length ?? 0)`;
+  await until(js, `${drawn} >= 8`, 45_000);
+  r.marketCharts = { day: await js(drawn) };
   shot("10-markets");
+  await panel(`d.querySelector('[data-period="1m"]').click()`);
+  await until(js, `document.querySelector('.oc-ovl iframe')?.contentDocument?.querySelector('[data-testid="market-table"] thead th:last-child')?.textContent.includes("Month") && ${drawn} >= 8`, 45_000);
+  r.marketCharts.month = await js(drawn);
+  shot("10b-markets-month");
   adb("shell", "input", "keyevent", "KEYCODE_BACK");
   await wait(600);
   await js(`window.ocMobile.openDashboard("portfolio")`);
@@ -265,6 +273,12 @@ async function main() {
   await wait(800);
   shot("14-more");
   close();
+  // The launcher icon, for the record: home screen, then the app list.
+  adb("shell", "input", "keyevent", "KEYCODE_HOME");
+  await wait(1200);
+  adb("shell", "input", "swipe", "540", "1800", "540", "400", "300");
+  await wait(1500);
+  shot("15-launcher");
 
   const live = ["BINANCE", "OKX", "BYBIT", "KUCOIN", "COINBASE", "MEXC"].filter((p) => (r.listed?.[p] ?? 0) > 50);
   const checks = {
@@ -282,6 +296,7 @@ async function main() {
     dex: (r.dex?.candles ?? 0) > 0,
     gold: (r.gold?.candles ?? 0) > 0,
     markets: (r.markets ?? 0) > 20,
+    marketCharts: (r.marketCharts?.day ?? 0) >= 8 && (r.marketCharts?.month ?? 0) >= 8,
     portfolio: (r.portfolio ?? 0) >= 5,
     desk: Boolean(r.desk?.live?.startsWith("Terminal running")),
     keysPage: r.keysPage?.tabs === 7 && r.keysPage.active === "OKX",

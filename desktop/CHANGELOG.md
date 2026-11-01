@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — 2026-11-01
+
+- **Market overview row charts.** The chart icon column is now a real price line per row (140 × 34 px, 92 × 30 on phones), green or red with a fading fill, in every tab. It follows the **Change over** period: Day (15-minute bars), Week (hourly; CoinGecko's 7-day line for coins), Month (4-hour bars), Year and Custom (daily closes). Rows load their line as they scroll into view; Refresh redraws them; a click still opens the pair in the main window.
+- Coins not on Binance now get history (and charts) from Bybit or OKX.
+- Tests: chart helpers (CoinGecko week line, windows, path geometry; 69 in total); smoke `dash` checks the lines in all four periods and on every tab. Dashboard screenshots that Electron cannot capture no longer fail the run.
+
 ## 0.6.0 — 2026-10-31
 
 - **Price alerts.** Right-click a price on the chart › **Set alert** (or add one in the new **Alerts** tab under the chart). Each alert fires **once** or **every time** the price crosses it (at most once a minute), on any symbol, not just the charted one, and is kept between runs. A firing shows a Windows notification (click it to chart the pair), a toast and a beep, and goes into the alert log. Alerts appear on the chart as dashed bell lines; pause, resume, re-arm, edit the price or note, or delete them in the list.

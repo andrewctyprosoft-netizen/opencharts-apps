@@ -42,7 +42,7 @@ export const COIN_COLUMNS: ColumnDef[] = [
 ];
 
 export function coingeckoUrl(page: number): string {
-  return `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&price_change_percentage=1h,24h,7d,30d,1y`;
+  return `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&price_change_percentage=1h,24h,7d,30d,1y&sparkline=true`;
 }
 
 export function parseCoins(json: unknown): Row[] {
@@ -232,6 +232,58 @@ export function parseStocks(json: unknown, offset = 0): Row[] {
 }
 
 /** Yahoo spark URL for up to 20 symbols. */
-export function sparkUrl(symbols: string[], range = "2y"): string {
-  return `https://query1.finance.yahoo.com/v8/finance/spark?symbols=${symbols.map(encodeURIComponent).join(",")}&range=${range}&interval=1d`;
+export function sparkUrl(symbols: string[], range = "2y", interval = "1d"): string {
+  return `https://query1.finance.yahoo.com/v8/finance/spark?symbols=${symbols.map(encodeURIComponent).join(",")}&range=${range}&interval=${interval}`;
+}
+
+// ── Row charts (the sparkline column) ──
+
+/**
+ * Intraday series per period: exchange bars for crypto, a Yahoo range for forex and stocks.
+ * Year and custom charts use the daily closes the change column already loads.
+ */
+export const CHART_SPECS: Record<"1d" | "1w" | "1m", { bar: "15m" | "1h" | "4h"; bars: number; range: string; interval: string }> = {
+  "1d": { bar: "15m", bars: 96, range: "1d", interval: "5m" },
+  "1w": { bar: "1h", bars: 168, range: "5d", interval: "15m" },
+  "1m": { bar: "4h", bars: 180, range: "1mo", interval: "1h" },
+};
+
+/** CoinGecko's `sparkline_in_7d` (hourly, oldest first) as [timeSec, price] per coin id. */
+export function parseCoinSparks(json: unknown): Array<[string, Array<[number, number]>]> {
+  return ((Array.isArray(json) ? json : []) as Array<Record<string, unknown>>).map((c) => {
+    const prices = ((c.sparkline_in_7d as { price?: unknown[] } | undefined)?.price ?? []).filter(
+      (p): p is number => typeof p === "number" && p > 0,
+    );
+    const updated = Date.parse(String(c.last_updated ?? ""));
+    const end = Math.floor((Number.isFinite(updated) ? updated : Date.now()) / 1000);
+    return [String(c.id ?? ""), prices.map((p, i): [number, number] => [end - (prices.length - 1 - i) * 3600, p])];
+  });
+}
+
+/** Closes from `fromSec` to `toSec` (inclusive). */
+export function closesBetween(closes: Array<[number, number]>, fromSec: number, toSec: number): Array<[number, number]> {
+  return closes.filter(([t]) => t >= fromSec && t <= toSec);
+}
+
+/**
+ * Line and area paths for a sparkline `width` x `height` (y grows down), at most one point per
+ * pixel column. Empty for fewer than two values.
+ */
+export function sparkPaths(values: number[], width: number, height: number, pad = 2): { line: string; area: string } {
+  if (values.length < 2) return { line: "", area: "" };
+  const step = Math.max(1, values.length / Math.max(2, width));
+  const pts: number[] = [];
+  for (let i = 0; i < values.length; i += step) pts.push(values[Math.floor(i)]!);
+  if (pts.at(-1) !== values.at(-1)) pts.push(values.at(-1)!);
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of pts) {
+    lo = Math.min(lo, v);
+    hi = Math.max(hi, v);
+  }
+  const span = hi - lo || 1;
+  const x = (i: number) => (i * width) / (pts.length - 1);
+  const y = (v: number) => (hi === lo ? height / 2 : pad + ((hi - v) / span) * (height - 2 * pad));
+  const line = pts.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  return { line, area: `${line}L${width},${height}L0,${height}Z` };
 }

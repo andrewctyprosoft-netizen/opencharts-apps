@@ -1,10 +1,5 @@
 # Changelog
 
-## Unreleased
-
-- **Refused-key hint, clearer.** A wrong secret (Binance -1022, OKX 50113, Bybit 10004, MEXC 700002, Gate.io INVALID_SIGNATURE) now gets its own short hint ("accepted the key but not the secret"), without the IP address or a test-network retry. For a refused key such as Binance -2015, the hint no longer suggests the secret on exchanges that report a wrong secret separately, says the address can change after a router restart as well as on a phone, and adds that Binance applies a change to a key's restrictions only after Save and its security check.
-- Fixed: a regular expression in the HTX error cleanup was saved with raw control bytes, which made git and grep treat `electron/exchanges.js` as a binary file.
-
 ## 0.6.3 — 2026-11-03
 
 - **Portfolio: HTX (Huobi), WhiteBIT, Gate.io, HitBTC and Poloniex.** Each takes an API key in **Data › Exchange API keys** and shows its balances and open orders (with **Cancel**) in the portfolio and the alerts & positions dashboard. They are portfolio-only: no price feed or order ticket. BitMEX is not added: it closed its exchange on 23 September 2026.
@@ -12,6 +7,9 @@
 - A Binance, OKX or Bybit test key saved without the test box ticked (or a live key with it ticked) is now tried on the other network and saved as what it is, instead of failing.
 - Binance key and secret are checked for shape before Binance is asked (64 letters and digits; a self-generated Ed25519/RSA private key is named as such). Zero-width characters some apps paste along are removed from every key field.
 - Tests: signing for the five new exchanges, their error, balance and open-order replies, Poloniex's failed-cancel reply; key checks, the network switch and the refused-key hint (90 in total).
+- **A refused Binance key is tried the other ways it could be meant** before giving up: on the Spot test network, on Binance Demo Trading (keys made at demo.binance.com only work on `demo-api.binance.com`; such a key is now saved as a demo key), and with the key and secret swapped (both are 64 letters and digits). Whichever works is saved, with a note saying what was found; otherwise the hint lists what was already ruled out.
+- **Refused-key hint, clearer.** A wrong secret (Binance -1022, OKX 50113, Bybit 10004, MEXC 700002, Gate.io INVALID_SIGNATURE) now gets its own short hint ("accepted the key but not the secret"), without the IP address or a test-network retry. For a refused key such as Binance -2015, the hint no longer suggests the secret on exchanges that report a wrong secret separately, says the address can change after a router restart as well as on a phone, and adds that Binance applies a change to a key's restrictions only after Save and its security check.
+- Fixed: a regular expression in the HTX error cleanup was saved with raw control bytes, which made git and grep treat `electron/exchanges.js` as a binary file.
 
 ## 0.6.2 — 2026-11-01
 

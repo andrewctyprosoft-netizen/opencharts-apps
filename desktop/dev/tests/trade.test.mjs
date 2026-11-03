@@ -12,9 +12,9 @@ function harness(answer) {
   let settings = { keys: {} };
   const fetched = [];
   const net = {
-    async fetch(url) {
+    async fetch(url, init) {
       fetched.push(url);
-      const [status, body] = answer(url);
+      const [status, body] = answer(url, init);
       return new Response(JSON.stringify(body), { status });
     },
   };
@@ -76,9 +76,30 @@ test("a Spot test network key saved without the box ticked is found and saved as
     url.startsWith("https://testnet.binance.vision/") ? [200, { balances: [{ asset: "USDT", free: "100", locked: "0" }] }] : [401, REJECTED],
   );
   const r = await trade.saveKeys("binance", { apiKey: KEY, secret: SECRET, testnet: false });
-  assert.deepEqual(r, { ok: true, assets: 1, testnet: true, switched: true });
+  assert.deepEqual(r, { ok: true, assets: 1, testnet: true, note: "This is a test network / demo key, so it was saved as one." });
   assert.equal(saved("binance").testnet, true);
   assert.equal(fetched.length, 2);
+});
+
+test("a Binance Demo Trading key is found on the demo host and saved as a demo key", async () => {
+  const { trade, saved } = harness((url) =>
+    url.startsWith("https://demo-api.binance.com/") ? [200, { balances: [{ asset: "USDT", free: "5000", locked: "0" }] }] : [401, REJECTED],
+  );
+  const r = await trade.saveKeys("binance", { apiKey: KEY, secret: SECRET });
+  assert.equal(r.ok, true);
+  assert.match(r.note, /Demo Trading key/);
+  assert.equal(saved("binance").demo, true);
+  assert.equal((await trade.status()).binance.testnet, true);
+});
+
+test("a Binance key and secret pasted into each other's boxes are saved the right way round", async () => {
+  const { trade, saved } = harness((url, init) =>
+    url.startsWith("https://api.binance.com/") && init?.headers?.["X-MBX-APIKEY"] === SECRET ? [200, { balances: [] }] : [401, REJECTED],
+  );
+  const r = await trade.saveKeys("binance", { apiKey: KEY, secret: SECRET });
+  assert.equal(r.ok, true);
+  assert.match(r.note, /each other's boxes/);
+  assert.deepEqual([saved("binance").apiKey, saved("binance").secret], [SECRET, KEY]);
 });
 
 test("a refused Binance key explains the causes with the address Binance sees", async () => {
@@ -87,9 +108,10 @@ test("a refused Binance key explains the causes with the address Binance sees", 
   assert.equal(r.ok, false);
   assert.match(r.error, /^Binance: Invalid API-key, IP, or permissions for action\. \(-2015\)\n\nCommon causes:/);
   assert.match(r.error, /Binance sees this device as 203\.0\.113\.7\./);
+  assert.match(r.error, /Already ruled out: the Spot test network, Demo Trading, and the key and secret swapped/);
   assert.deepEqual(
     fetched.map((u) => new URL(u).host),
-    ["api.binance.com", "testnet.binance.vision", "api.ipify.org"],
+    ["api.binance.com", "testnet.binance.vision", "demo-api.binance.com", "api.binance.com", "api.ipify.org"],
   );
 });
 

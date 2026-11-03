@@ -77,6 +77,7 @@ public class OcNativePlugin extends Plugin {
             // Exchanges: market data and signed trading requests
             "api.binance.com",
             "testnet.binance.vision",
+            "demo-api.binance.com",
             "www.okx.com",
             "api.bybit.com",
             "api-testnet.bybit.com",

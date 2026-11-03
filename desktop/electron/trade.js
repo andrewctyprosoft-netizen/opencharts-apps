@@ -13,6 +13,7 @@ import {
   cleanKeyText,
   clientOrderId,
   htxSpotAccount,
+  keyAlternatives,
   keyFormatError,
   keyRejection,
   openOrdersRequest,
@@ -102,8 +103,8 @@ export function createTrade({ net, safeStorage, getSettings, saveSettings, oanda
 
   /**
    * Check the key by reading balances, then store it encrypted. A key the exchange refuses is
-   * tried once on its other network (live ↔ test), so a test key saved without the box ticked,
-   * or the other way round, still works.
+   * tried the other ways it could be meant (see keyAlternatives): a test key saved without the
+   * box ticked, a Binance Demo Trading key, key and secret pasted into each other's boxes.
    */
   async function saveKeys(ex, fields) {
     if (!isExchange(ex)) return { ok: false, error: "Unknown exchange." };
@@ -113,11 +114,19 @@ export function createTrade({ net, safeStorage, getSettings, saveSettings, oanda
     const read = async (c) => parseBalances(ex, await balancesReply(ex, c));
     let creds = v.creds;
     let assets;
+    let note = "";
     try {
       assets = await read(creds);
     } catch (err) {
-      const other = HAS_TESTNET.has(ex) && err.rejection === "key" ? { ...creds, testnet: !creds.testnet } : null;
-      if (other) assets = await read(other).then((a) => ((creds = other), a), () => undefined);
+      if (err.rejection === "key") {
+        for (const alt of keyAlternatives(ex, creds)) {
+          const found = await read(alt.creds).catch(() => undefined);
+          if (found) {
+            [assets, creds, note] = [found, alt.creds, alt.note];
+            break;
+          }
+        }
+      }
       if (!assets) {
         const message = String(err.message || err);
         if (!err.rejection) return { ok: false, error: message };
@@ -128,7 +137,7 @@ export function createTrade({ net, safeStorage, getSettings, saveSettings, oanda
     const settings = getSettings();
     settings.keys = { ...settings.keys, [ex]: safeStorage.encryptString(JSON.stringify(creds)).toString("base64") };
     saveSettings(settings);
-    return { ok: true, assets: assets.length, testnet: creds.testnet, switched: creds !== v.creds };
+    return { ok: true, assets: assets.length, testnet: Boolean(creds.testnet || creds.demo), note };
   }
 
   function clearKeys(ex) {
@@ -146,7 +155,7 @@ export function createTrade({ net, safeStorage, getSettings, saveSettings, oanda
     const out = {};
     for (const [id, info] of Object.entries(KEY_EXCHANGES)) {
       const c = creds(id);
-      out[id] = { configured: Boolean(c), label: info.label, testnet: Boolean(c?.testnet), trading: Object.hasOwn(EXCHANGES, id) };
+      out[id] = { configured: Boolean(c), label: info.label, testnet: Boolean(c?.testnet || c?.demo), trading: Object.hasOwn(EXCHANGES, id) };
     }
     const o = await oanda.status();
     out.oanda = { configured: o.configured && !o.error, label: "OANDA", testnet: o.env === "practice" };

@@ -180,7 +180,7 @@
           configured[current] = true;
           renderTabs();
           for (const id of ["apiKey", "secret", "secretArea", "passphrase"]) $(id).value = "";
-          const net = r.switched ? ` This is a ${r.testnet ? "test network" : "live"} key, so it was saved as one.` : "";
+          const net = r.note ? ` ${r.note}` : "";
           const use = v.portfolio ? "Its balances and open orders now show in the portfolio." : `Orders on ${v.label} pairs now go to this account.`;
           status(`Saved. ${v.label} answered with ${r.assets} asset${r.assets === 1 ? "" : "s"} on the account.${net} ${use}`, "ok");
         } else {

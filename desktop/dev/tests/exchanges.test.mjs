@@ -37,6 +37,8 @@ test("Binance: matches the signature example in Binance's API docs", () => {
 test("Binance testnet and MEXC use their own host and key header", () => {
   const t = signRequest("binance", { apiKey: "k", secret: "s", testnet: true }, { method: "GET", path: "/api/v3/account" }, NOW);
   assert.ok(t.url.startsWith("https://testnet.binance.vision/api/v3/account?recvWindow=5000&timestamp="));
+  const demo = signRequest("binance", { apiKey: "k", secret: "s", demo: true }, { method: "GET", path: "/api/v3/account" }, NOW);
+  assert.ok(demo.url.startsWith("https://demo-api.binance.com/api/v3/account?"));
   const m = signRequest("mexc", { apiKey: "mk", secret: "s" }, { method: "GET", path: "/api/v3/account" }, NOW);
   assert.ok(m.url.startsWith("https://api.mexc.com/api/v3/account?"));
   assert.equal(m.init.headers["X-MEXC-APIKEY"], "mk");

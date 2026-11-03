@@ -8,7 +8,8 @@ import crypto from "node:crypto";
 
 /** Production hosts, plus the test networks some exchanges offer for trying keys safely. */
 export const PRIVATE_HOSTS = {
-  binance: { live: "https://api.binance.com", test: "https://testnet.binance.vision" },
+  // Demo Trading keys (made at demo.binance.com) only work on the demo host.
+  binance: { live: "https://api.binance.com", test: "https://testnet.binance.vision", demo: "https://demo-api.binance.com" },
   okx: { live: "https://www.okx.com", test: "https://www.okx.com" }, // demo keys use a header instead
   bybit: { live: "https://api.bybit.com", test: "https://api-testnet.bybit.com" },
   kucoin: { live: "https://api.kucoin.com" },
@@ -82,7 +83,7 @@ export function coinbaseJwt(keyName, secret, method, path, nowMs, nonce) {
 /**
  * Sign a private request.
  * @param {string} ex exchange id
- * @param {{apiKey: string, secret: string, passphrase?: string, testnet?: boolean}} creds
+ * @param {{apiKey: string, secret: string, passphrase?: string, testnet?: boolean, demo?: boolean}} creds
  * @param {{method: string, path: string, query?: object, body?: object}} req
  * @param {number} nowMs
  * @param {string} [nonce] Coinbase JWT nonce
@@ -91,7 +92,7 @@ export function coinbaseJwt(keyName, secret, method, path, nowMs, nonce) {
 export function signRequest(ex, creds, req, nowMs, nonce = crypto.randomBytes(16).toString("hex")) {
   const hosts = PRIVATE_HOSTS[ex];
   if (!hosts) throw new Error(`Unknown exchange ${ex}`);
-  const host = creds.testnet && hosts.test ? hosts.test : hosts.live;
+  const host = creds.demo && hosts.demo ? hosts.demo : creds.testnet && hosts.test ? hosts.test : hosts.live;
   const method = req.method.toUpperCase();
   const qs = queryString(req.query);
   const body = req.body ? JSON.stringify(req.body) : "";
@@ -515,6 +516,32 @@ export function keyRejection(ex, status, json) {
 }
 
 /**
+ * Other readings of a key the exchange refused, most likely first: the other network (a test key
+ * saved as live or the reverse), Binance Demo Trading, and on Binance the key and secret swapped
+ * (both are 64 letters and digits, so their shape cannot tell them apart).
+ * @param {string} ex
+ * @param {{apiKey: string, secret: string, passphrase?: string, testnet?: boolean, demo?: boolean}} creds
+ * @returns {{creds: object, note: string}[]} each with what it means once it works
+ */
+export function keyAlternatives(ex, creds) {
+  const out = [];
+  if (HAS_TESTNET.has(ex)) {
+    const flip = { ...creds, testnet: !creds.testnet, demo: false };
+    out.push({ creds: flip, note: flip.testnet ? "This is a test network / demo key, so it was saved as one." : "This is a live key, so it was saved as one." });
+  }
+  if (ex === "binance") {
+    if (!creds.demo) {
+      out.push({
+        creds: { ...creds, testnet: false, demo: true },
+        note: "This is a Binance Demo Trading key (made at demo.binance.com), so it was saved as one: the portfolio and orders use the demo account. For your real account, create the key with Demo Trading switched off.",
+      });
+    }
+    out.push({ creds: { ...creds, apiKey: creds.secret, secret: creds.apiKey }, note: "The API key and the secret were in each other's boxes; they were saved the right way round." });
+  }
+  return out;
+}
+
+/**
  * What to check after the exchange refused a key, with the address it saw this device on.
  * @param {string} ex
  * @param {string} label
@@ -536,8 +563,9 @@ export function rejectedKeyHint(ex, label, ip, cause = "key") {
       : "• The key was deleted, or the key or secret was not copied in full.",
   ];
   if (ex === "binance") {
-    lines.push("• The key comes from another Binance site (Binance US, TR, Japan…) or from Demo Trading: OpenCharts uses www.binance.com keys, or Spot test network keys with the box ticked.");
+    lines.push("• The key comes from another Binance site (Binance US, TR, Japan…): OpenCharts uses www.binance.com keys.");
     lines.push("• Enable Reading is off, or a change to the key's restrictions was not saved: Binance applies it only after Save and its security check.");
+    lines.push("Already ruled out: the Spot test network, Demo Trading, and the key and secret swapped (OpenCharts tried each).");
   } else {
     lines.push("• The key is missing the read permission.");
   }

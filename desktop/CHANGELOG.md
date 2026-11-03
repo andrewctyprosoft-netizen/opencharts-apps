@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Portfolio: HTX (Huobi), WhiteBIT, Gate.io, HitBTC and Poloniex.** Each takes an API key in **Data › Exchange API keys** and shows its balances and open orders (with **Cancel**) in the portfolio and the alerts & positions dashboard. They are portfolio-only: no price feed or order ticket. BitMEX is not added: it closed its exchange on 23 September 2026.
+- **Clearer answer when an exchange refuses a key** (Binance's "Invalid API-key, IP, or permissions for action (-2015)"): the keys window now lists the usual causes (IP restriction, key cut short or deleted, a key from another Binance site or Demo Trading, Enable Reading off) and shows the public IPv4 address the exchange sees, to add to the key's IP whitelist.
+- A Binance, OKX or Bybit test key saved without the test box ticked (or a live key with it ticked) is now tried on the other network and saved as what it is, instead of failing.
+- Binance key and secret are checked for shape before Binance is asked (64 letters and digits; a self-generated Ed25519/RSA private key is named as such). Zero-width characters some apps paste along are removed from every key field.
+- Tests: signing for the five new exchanges, their error, balance and open-order replies, Poloniex's failed-cancel reply; key checks, the network switch and the refused-key hint (90 in total).
+
 ## 0.6.2 — 2026-11-01
 
 - **Market overview: one Crypto tab for centralised and decentralised markets.** Crypto, Crypto pairs and DEX are merged. Each of the 1,000 coins shows the exchanges listing it, its DEX liquidity and 24h volume across eleven chains (DexScreener, matched by contract address), and the gap between its DEX and exchange prices. Click a coin's name to see every exchange pair and its most liquid DEX pools, each with a Chart button. Trending GeckoTerminal pools whose token is not among the coins appear as "DEX only" rows, with instant day lines from their reported 24 h, 6 h, 1 h, 30, 15 and 5-minute changes. A DEX pool's Chart button adds the pool to the symbol list and charts it in the main window.

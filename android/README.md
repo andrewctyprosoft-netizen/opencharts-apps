@@ -69,6 +69,11 @@ The same sources as the desktop app.
 
 Without a key, an order opens a reminder that leads to the keys page, or paper trades that order.
 Binance testnet, OKX demo and Bybit testnet keys can be marked as test keys.
+If the exchange refuses the key, the keys page lists the usual causes and the public IPv4 address the exchange sees (read from api.ipify.org only at that moment), for keys with an IP restriction.
+A Binance testnet key saved without the test box ticked, or the other way round, is found on the other network and saved as such (OKX and Bybit too).
+Binance keys are checked for shape first: a system-generated key and secret are 64 letters and digits, so a key cut short in pasting is caught before Binance is asked.
+
+**HTX (Huobi), WhiteBIT, Gate.io, HitBTC and Poloniex** take a key for the portfolio only (balances, open orders, cancel); there is no price feed or order ticket for them. BitMEX is not offered: it closed on 23 September 2026.
 Real orders are market or limit spot orders; take profit and stop loss go with OANDA orders only.
 
 ## Price Alerts

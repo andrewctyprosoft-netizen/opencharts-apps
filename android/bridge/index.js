@@ -8,7 +8,7 @@
 // Loaded as a classic script before the terminal's module script. Inside a panel iframe it
 // reuses the parent's services instead of starting a second set.
 
-import { EXCHANGES, DATA_SOURCES, normalizeSettings } from "../../desktop/electron/lib.js";
+import { EXCHANGES, KEY_EXCHANGES, DATA_SOURCES, normalizeSettings } from "../../desktop/electron/lib.js";
 import { createFx } from "../../desktop/electron/fx.js";
 import { createGecko } from "../../desktop/electron/gecko.js";
 import { createOanda } from "../../desktop/electron/oanda.js";
@@ -145,7 +145,7 @@ function startBridge() {
     openOverlay(view, `index.html?view=${view}&ex=${enabledExchanges().join(",")}`, DASHBOARDS[view]);
   }
   function openKeys(venue = "binance") {
-    const v = Object.hasOwn(EXCHANGES, venue) || venue === "oanda" ? venue : "binance";
+    const v = Object.hasOwn(KEY_EXCHANGES, venue) || venue === "oanda" ? venue : "binance";
     openOverlay("keys", `keys.html?venue=${v}`, "Exchange API keys");
   }
   function openToken() {

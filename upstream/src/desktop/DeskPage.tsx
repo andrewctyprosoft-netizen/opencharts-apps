@@ -1,6 +1,7 @@
 import { Bell, BriefcaseBusiness, ListOrdered, Loader2, RefreshCw, Wallet } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DesktopBridge, VenueBalance, VenueId, VenueOrder, VenueStatus } from "../../../adapters/types.ts";
+import { KEYED_VENUES } from "../../../adapters/types.ts";
 import { ipcMessage } from "../../../adapters/venues.ts";
 import { priceFor, usdtPrices } from "../../../adapters/wallets.ts";
 import { cn } from "../lib/utils.ts";
@@ -19,7 +20,7 @@ import { isMobileApp } from "../mobile/is-mobile.ts";
  * BroadcastChannel; real accounts come from the API keys in the main process.
  */
 
-const VENUES: VenueId[] = ["binance", "okx", "bybit", "kucoin", "coinbase", "mexc", "oanda"];
+const VENUES: VenueId[] = KEYED_VENUES;
 const REFRESH_MS = 30_000;
 const STALE_MS = 6_000;
 

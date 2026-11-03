@@ -1,35 +1,55 @@
 // The slice of node:crypto that bridge/core/exchanges.js uses, on audited pure-JS libraries
 // (@noble), so the desktop app's signing code runs unchanged inside the Android WebView.
-// Synchronous like Node's API: HMAC-SHA256, ES256 (P-256, IEEE P1363 signatures), Ed25519, random bytes.
+// Synchronous like Node's API: SHA-256/512 hashes and HMACs, ES256 (P-256, IEEE P1363 signatures),
+// Ed25519, random bytes.
 
 import { p256 } from "@noble/curves/nist.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { hmac } from "@noble/hashes/hmac.js";
-import { sha256 } from "@noble/hashes/sha2.js";
+import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { randomBytes as nobleRandom } from "@noble/hashes/utils.js";
 import { Buffer } from "buffer";
 
 const bytes = (v) => (typeof v === "string" ? new TextEncoder().encode(v) : new Uint8Array(v));
 
-/**
- * HMAC like `crypto.createHmac("sha256", key).update(data).digest(enc)`.
- * @param {string} alg only "sha256"
- * @param {string | Uint8Array} key
- */
-function createHmac(alg, key) {
-  if (alg !== "sha256") throw new Error(`Unsupported HMAC ${alg}`);
-  const mac = hmac.create(sha256, bytes(key));
+const HASHES = { sha256, sha512 };
+
+function hashOf(alg) {
+  const h = HASHES[alg];
+  if (!h) throw new Error(`Unsupported hash ${alg}`);
+  return h;
+}
+
+/** A Node-style update/digest object over a @noble incremental hash. */
+function digester(inner) {
   const api = {
     update(data) {
-      mac.update(bytes(data));
+      inner.update(bytes(data));
       return api;
     },
     digest(encoding) {
-      const out = Buffer.from(mac.digest());
+      const out = Buffer.from(inner.digest());
       return encoding ? out.toString(encoding) : out;
     },
   };
   return api;
+}
+
+/**
+ * HMAC like `crypto.createHmac("sha256", key).update(data).digest(enc)`.
+ * @param {string} alg "sha256" or "sha512"
+ * @param {string | Uint8Array} key
+ */
+function createHmac(alg, key) {
+  return digester(hmac.create(hashOf(alg), bytes(key)));
+}
+
+/**
+ * Hash like `crypto.createHash("sha512").update(data).digest(enc)`.
+ * @param {string} alg "sha256" or "sha512"
+ */
+function createHash(alg) {
+  return digester(hashOf(alg).create());
 }
 
 // ── Minimal DER reading, enough for EC private keys ──
@@ -109,5 +129,5 @@ function sign(alg, data, keyOrOpts) {
 
 const randomBytes = (n) => Buffer.from(nobleRandom(n));
 
-export { createHmac, createPrivateKey, sign, randomBytes };
-export default { createHmac, createPrivateKey, sign, randomBytes };
+export { createHash, createHmac, createPrivateKey, sign, randomBytes };
+export default { createHash, createHmac, createPrivateKey, sign, randomBytes };

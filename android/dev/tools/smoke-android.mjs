@@ -302,6 +302,10 @@ async function main() {
   r.keysPage = await panel(`({ tabs: d.querySelectorAll("nav button").length, active: d.querySelector("nav button.active span")?.textContent })`);
   // A made-up OKX key must reach OKX (signed natively) and come back rejected.
   r.okxCheck = await js(`window.ocDesktop.keys.save("okx", { apiKey: "00000000-0000-0000-0000-000000000000", secret: "${"C".repeat(32)}", passphrase: "smoke" })`);
+  // Made-up Binance and Gate.io keys: refused, with the causes and the phone's public IPv4 address
+  // (Binance also tries the test network; Gate.io signs with HMAC-SHA512 through the shim).
+  r.binanceCheck = await js(`window.ocDesktop.keys.save("binance", { apiKey: "${"Z".repeat(64)}", secret: "${"Z".repeat(64)}" })`);
+  r.gateCheck = await js(`window.ocDesktop.keys.save("gate", { apiKey: "smokekey", secret: "smokesecret" })`);
   shot("13-keys");
   adb("shell", "input", "keyevent", "KEYCODE_BACK");
   await wait(600);
@@ -338,8 +342,10 @@ async function main() {
     marketTrade: Boolean(r.trade?.https && r.trade.onScreen && r.trade.wallets[0] === "browser" && r.trade.wallets.length >= 3),
     portfolio: (r.portfolio ?? 0) >= 5,
     desk: Boolean(r.desk?.live?.startsWith("Terminal running")),
-    keysPage: r.keysPage?.tabs === 7 && r.keysPage.active === "OKX",
+    keysPage: r.keysPage?.tabs === 12 && r.keysPage.active === "OKX",
     okxSigned: /OKX/.test(r.okxCheck?.error ?? "") && r.okxCheck?.ok === false,
+    binanceHint: /-2015[\s\S]*sees this device as \d+\.\d+\.\d+\.\d+/.test(r.binanceCheck?.error ?? ""),
+    gateSigned: /INVALID_KEY[\s\S]*Common causes/.test(r.gateCheck?.error ?? ""),
     panelsClosed: r.panelsClosed,
   };
   const ok = Object.values(checks).every(Boolean);

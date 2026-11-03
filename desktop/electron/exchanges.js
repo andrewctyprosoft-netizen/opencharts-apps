@@ -1,6 +1,8 @@
 // Private exchange API requests: signing, order bodies and reply parsing for Binance, OKX, Bybit,
-// KuCoin, Coinbase (Advanced Trade) and MEXC. Pure apart from node:crypto; unit-tested in
-// dev/tests/exchanges.test.mjs. Keys are passed in by electron/trade.js and never stored here.
+// KuCoin, Coinbase (Advanced Trade) and MEXC, plus balances, open orders and cancels for the
+// portfolio-only exchanges (HTX, WhiteBIT, Gate.io, HitBTC, Poloniex). Pure apart from
+// node:crypto; unit-tested in dev/tests/exchanges.test.mjs. Keys are passed in by
+// electron/trade.js and never stored here.
 
 import crypto from "node:crypto";
 
@@ -12,12 +14,25 @@ export const PRIVATE_HOSTS = {
   kucoin: { live: "https://api.kucoin.com" },
   coinbase: { live: "https://api.coinbase.com" },
   mexc: { live: "https://api.mexc.com" },
+  htx: { live: "https://api.huobi.pro" },
+  whitebit: { live: "https://whitebit.com" },
+  gate: { live: "https://api.gateio.ws" },
+  hitbtc: { live: "https://api.hitbtc.com" },
+  poloniex: { live: "https://api.poloniex.com" },
 };
 
 /** Exchanges whose keys can be test-network / demo keys. */
 export const HAS_TESTNET = new Set(["binance", "okx", "bybit"]);
 
-const hmac = (secret, data, encoding) => crypto.createHmac("sha256", secret).update(data).digest(encoding);
+const hmac = (secret, data, encoding, alg = "sha256") => crypto.createHmac(alg, secret).update(data).digest(encoding);
+const sha512Hex = (data) => crypto.createHash("sha512").update(data).digest("hex");
+/** k=v pairs sorted by key (ASCII), values percent-encoded. */
+const sortedQuery = (params) =>
+  Object.keys(params)
+    .filter((k) => params[k] !== undefined && params[k] !== null && params[k] !== "")
+    .sort()
+    .map((k) => `${k}=${encodeURIComponent(String(params[k]))}`)
+    .join("&");
 const b64url = (buf) => Buffer.from(buf).toString("base64url");
 
 /** Query string in insertion order, skipping undefined values. */
@@ -139,6 +154,40 @@ export function signRequest(ex, creds, req, nowMs, nonce = crypto.randomBytes(16
       const headers = { ...json, Authorization: `Bearer ${token}` };
       return { url: host + req.path + (qs ? `?${qs}` : ""), init: { method, headers, ...(body && { body }) } };
     }
+    case "htx": {
+      // Signature v2: the auth fields go in the query, sorted with the request's own parameters.
+      const signed = sortedQuery({
+        ...req.query,
+        AccessKeyId: creds.apiKey,
+        SignatureMethod: "HmacSHA256",
+        SignatureVersion: "2",
+        Timestamp: new Date(nowMs).toISOString().slice(0, 19),
+      });
+      const signature = hmac(creds.secret, `${method}\n${new URL(host).host}\n${req.path}\n${signed}`, "base64");
+      return { url: `${host}${req.path}?${signed}&Signature=${encodeURIComponent(signature)}`, init: { method, headers: json, ...(body && { body }) } };
+    }
+    case "whitebit": {
+      // Every private call is a POST whose JSON body names the endpoint; the body is signed as base64.
+      const raw = JSON.stringify({ ...req.body, request: req.path, nonce: String(nowMs), nonceWindow: true });
+      const payload = Buffer.from(raw).toString("base64");
+      const headers = { ...json, "X-TXC-APIKEY": creds.apiKey, "X-TXC-PAYLOAD": payload, "X-TXC-SIGNATURE": hmac(creds.secret, payload, "hex", "sha512") };
+      return { url: host + req.path, init: { method: "POST", headers, body: raw } };
+    }
+    case "gate": {
+      const ts = String(Math.floor(nowMs / 1000));
+      const headers = { ...json, KEY: creds.apiKey, Timestamp: ts, SIGN: hmac(creds.secret, `${method}\n${req.path}\n${qs}\n${sha512Hex(body)}\n${ts}`, "hex", "sha512") };
+      return { url: host + req.path + (qs ? `?${qs}` : ""), init: { method, headers, ...(body && { body }) } };
+    }
+    case "hitbtc": {
+      const headers = { ...json, Authorization: `Basic ${Buffer.from(`${creds.apiKey}:${creds.secret}`).toString("base64")}` };
+      return { url: host + req.path + (qs ? `?${qs}` : ""), init: { method, headers, ...(body && { body }) } };
+    }
+    case "poloniex": {
+      const ts = String(nowMs);
+      const params = body ? `requestBody=${body}&signTimestamp=${ts}` : sortedQuery({ ...req.query, signTimestamp: ts });
+      const headers = { ...json, key: creds.apiKey, signTimestamp: ts, signature: hmac(creds.secret, `${method}\n${req.path}\n${params}`, "base64") };
+      return { url: host + req.path + (qs ? `?${qs}` : ""), init: { method, headers, ...(body && { body }) } };
+    }
   }
   throw new Error(`Unknown exchange ${ex}`);
 }
@@ -159,8 +208,30 @@ export function balancesRequest(ex) {
       return { method: "GET", path: "/api/v1/accounts", query: { type: "trade" } };
     case "coinbase":
       return { method: "GET", path: "/api/v3/brokerage/accounts", query: { limit: 250 } };
+    case "htx":
+      return { method: "GET", path: "/v1/account/accounts" }; // then accountBalanceRequest
+    case "whitebit":
+      return { method: "POST", path: "/api/v4/trade-account/balance", body: {} };
+    case "gate":
+      return { method: "GET", path: "/api/v4/spot/accounts" };
+    case "hitbtc":
+      return { method: "GET", path: "/api/3/spot/balance" };
+    case "poloniex":
+      return { method: "GET", path: "/accounts/balances" };
   }
   throw new Error(`Unknown exchange ${ex}`);
+}
+
+/** HTX keeps balances per account: the spot account's id from /v1/account/accounts, or null. */
+export function htxSpotAccount(json) {
+  const spot = (json?.data ?? []).filter((a) => a.type === "spot");
+  const acc = spot.find((a) => a.state !== "lock") ?? spot[0];
+  return acc ? String(acc.id) : null;
+}
+
+/** HTX balance of one account. */
+export function accountBalanceRequest(accountId) {
+  return { method: "GET", path: `/v1/account/accounts/${encodeURIComponent(accountId)}/balance` };
 }
 
 /** MEXC needs a symbol for open orders; pass it for MEXC, the others list everything. */
@@ -178,6 +249,16 @@ export function openOrdersRequest(ex, native) {
       return { method: "GET", path: "/api/v1/orders", query: { status: "active", tradeType: "TRADE" } };
     case "coinbase":
       return { method: "GET", path: "/api/v3/brokerage/orders/historical/batch", query: { order_status: "OPEN" } };
+    case "htx":
+      return { method: "GET", path: "/v1/order/openOrders", query: { size: 500 } };
+    case "whitebit":
+      return { method: "POST", path: "/api/v4/orders", body: { limit: 100 } };
+    case "gate":
+      return { method: "GET", path: "/api/v4/spot/open_orders", query: { limit: 100 } };
+    case "hitbtc":
+      return { method: "GET", path: "/api/3/spot/order" };
+    case "poloniex":
+      return { method: "GET", path: "/orders", query: { limit: 2000 } };
   }
   throw new Error(`Unknown exchange ${ex}`);
 }
@@ -278,6 +359,16 @@ export function cancelRequest(ex, native, id) {
       return { method: "DELETE", path: `/api/v1/orders/${encodeURIComponent(id)}` };
     case "coinbase":
       return { method: "POST", path: "/api/v3/brokerage/orders/batch_cancel", body: { order_ids: [id] } };
+    case "htx":
+      return { method: "POST", path: `/v1/order/orders/${encodeURIComponent(id)}/submitcancel`, body: {} };
+    case "whitebit":
+      return { method: "POST", path: "/api/v4/order/cancel", body: { market: native, orderId: Number(id) } };
+    case "gate":
+      return { method: "DELETE", path: `/api/v4/spot/orders/${encodeURIComponent(id)}`, query: { currency_pair: native } };
+    case "hitbtc":
+      return { method: "DELETE", path: `/api/3/spot/order/${encodeURIComponent(id)}` };
+    case "poloniex":
+      return { method: "DELETE", path: `/orders/${encodeURIComponent(id)}` };
   }
   throw new Error(`Unknown exchange ${ex}`);
 }
@@ -328,8 +419,107 @@ export function apiError(ex, status, json) {
       }
       if (status >= 400) return json?.message || json?.error_details || json?.error || fallback;
       return null;
+    case "htx":
+      // The message may end in a Chinese copy in brackets: "Incorrect Access key [Access key错误]".
+      if (json?.status === "error") return `${String(json["err-msg"] || "HTX error").replace(/\s*\[[^\]]*[^ -][^\]]*\]/g, "")} (${json["err-code"]})`;
+      if (json && json.code !== undefined && json.code !== 200) return `${json.message || "HTX error"} (${json.code})`;
+      return fallback;
+    case "whitebit":
+      if (status >= 400 || (json && json.success === false)) {
+        const detail = Object.values(json?.errors ?? {}).flat()[0];
+        return json?.message ? `${json.message}${detail ? ` ${detail}` : ""}${json.code !== undefined ? ` (${json.code})` : ""}` : fallback;
+      }
+      return null;
+    case "gate":
+      if (status >= 400) return json?.label ? `${json.message || json.label} (${json.label})` : fallback;
+      return null;
+    case "hitbtc":
+      if (json?.error) return `${json.error.message}${json.error.description ? `: ${json.error.description}` : ""} (${json.error.code})`;
+      return fallback;
+    case "poloniex":
+      if (status >= 400 || (json && !Array.isArray(json) && json.code !== undefined && json.code !== 200)) {
+        return json?.message ? `${json.message}${json.code !== undefined ? ` (${json.code})` : ""}` : fallback;
+      }
+      return null;
   }
   return fallback;
+}
+
+// ── Checking a new key ────────────────────────────────────
+
+/** Zero-width characters and byte-order marks some phone keyboards and chat apps paste along. */
+const INVISIBLE_RE = /[​-‍⁠﻿­]/g;
+
+/** Pasted key text without invisible characters and surrounding blanks. */
+export function cleanKeyText(v) {
+  return String(v ?? "").replace(INVISIBLE_RE, "").trim();
+}
+
+/**
+ * A plain-language problem with a pasted key's shape, or null. Only checks what is certain for
+ * the exchange (Binance's system-generated HMAC keys are 64 letters and digits).
+ * @param {string} ex
+ * @param {string} apiKey
+ * @param {string} secret
+ */
+export function keyFormatError(ex, apiKey, secret) {
+  if (ex !== "binance") return null;
+  if (/BEGIN|PRIVATE KEY/.test(secret)) {
+    return "That is the private key of a self-generated (Ed25519 or RSA) Binance key. OpenCharts signs with HMAC: create a system-generated key and paste its API key and secret key.";
+  }
+  const shape = (v) => /^[A-Za-z0-9]{64}$/.test(v);
+  if (!shape(apiKey)) return `A Binance API key is 64 letters and digits; the one entered has ${apiKey.length} characters. Copy it again in full.`;
+  if (!shape(secret)) return `A Binance secret key is 64 letters and digits; the one entered has ${secret.length} characters. Binance shows the secret only once, when the key is created: if it is lost, delete the key and create a new one.`;
+  return null;
+}
+
+/**
+ * Whether a failed reply means the exchange refused the key itself (unknown key, wrong network,
+ * IP not allowed, missing permission), as opposed to a bad request or an outage.
+ * @param {string} ex
+ * @param {number} status
+ * @param {any} json
+ */
+export function keyRejected(ex, status, json) {
+  switch (ex) {
+    case "binance":
+    case "mexc":
+      return [-1022, -2008, -2014, -2015, 10072, 700002, 700006, 700007].includes(Number(json?.code));
+    case "okx":
+      return ["50110", "50111", "50113", "50119", "50120", "50121"].includes(String(json?.code));
+    case "bybit":
+      return [10003, 10004, 10005, 10010, 33004].includes(Number(json?.retCode));
+    case "htx":
+      return /^(api-signature-not-valid|invalid-access-key|api-not-support-temp-addr|forbidden-trade-for-ip|api-key-not-found|login-required)/.test(String(json?.["err-code"] ?? ""));
+    case "gate":
+      return ["INVALID_KEY", "INVALID_SIGNATURE", "FORBIDDEN", "IP_FORBIDDEN", "READ_ONLY"].includes(json?.label) || status === 401;
+    case "hitbtc":
+      return [1001, 1002, 1003, 1004].includes(Number(json?.error?.code)) || status === 401;
+    case "poloniex":
+      return status === 401 || /api ?key|signature/i.test(String(json?.message ?? ""));
+  }
+  return status === 401 || status === 403;
+}
+
+/**
+ * What to check after the exchange refused a key, with the address it saw this device on.
+ * @param {string} ex
+ * @param {string} label
+ * @param {string | null} ip public IPv4 address of this device, when it could be read
+ */
+export function rejectedKeyHint(ex, label, ip) {
+  const where = ip ? `${label} sees this device as ${ip}.` : "";
+  const lines = [
+    `• The key has an IP restriction that does not include this device. ${where} On a phone the address changes between Wi-Fi and mobile data: add each address, or set the key to Unrestricted (read and spot trading only, never withdrawals).`.trim(),
+    "• The key was deleted, or the key or secret was not copied in full (the secret must belong to this key).",
+  ];
+  if (ex === "binance") {
+    lines.push("• The key comes from another Binance site (Binance US, TR, Japan…) or from Demo Trading: OpenCharts uses www.binance.com keys, or Spot test network keys with the box ticked.");
+    lines.push("• Enable Reading is off in the key's restrictions.");
+  } else {
+    lines.push("• The key is missing the read permission.");
+  }
+  return lines.join("\n");
 }
 
 /** Balances reply → [{asset, free, locked, usd?}] for assets that are not zero. */
@@ -374,6 +564,44 @@ export function parseBalances(ex, json) {
         locked: n(a.hold?.value),
       }));
       break;
+    case "htx": {
+      const by = new Map();
+      for (const b of json?.data?.list ?? []) {
+        const asset = String(b.currency).toUpperCase();
+        const prev = by.get(asset) ?? { asset, free: 0, locked: 0 };
+        // Only these two are holdings; loan and interest rows are debts.
+        if (b.type === "trade") prev.free += n(b.balance);
+        else if (b.type === "frozen") prev.locked += n(b.balance);
+        else continue;
+        by.set(asset, prev);
+      }
+      list = [...by.values()];
+      break;
+    }
+    case "whitebit":
+      list = Object.entries(json && typeof json === "object" && !Array.isArray(json) ? json : {}).map(([asset, b]) => ({
+        asset,
+        free: n(b?.available),
+        locked: n(b?.freeze),
+      }));
+      break;
+    case "gate":
+    case "hitbtc":
+      list = (Array.isArray(json) ? json : []).map((b) => ({ asset: b.currency, free: n(b.available), locked: n(b.locked ?? b.reserved) }));
+      break;
+    case "poloniex": {
+      const by = new Map();
+      for (const acc of Array.isArray(json) ? json : []) {
+        for (const b of acc.balances ?? []) {
+          const prev = by.get(b.currency) ?? { asset: b.currency, free: 0, locked: 0 };
+          prev.free += n(b.available);
+          prev.locked += n(b.hold);
+          by.set(b.currency, prev);
+        }
+      }
+      list = [...by.values()];
+      break;
+    }
   }
   return list.filter((b) => b.asset && b.free + b.locked > 0);
 }
@@ -440,6 +668,68 @@ export function parseOpenOrders(ex, json) {
           time: Date.parse(o.created_time) || 0,
         };
       });
+    case "htx":
+      return (json?.data ?? []).map((o) => {
+        // "buy-limit", "sell-limit-maker", "buy-ioc" …
+        const [side, ...type] = String(o.type).toUpperCase().split("-");
+        return {
+          id: String(o.id),
+          native: String(o.symbol).toUpperCase(),
+          side,
+          type: type.join("-") || "LIMIT",
+          price: n(o.price) || null,
+          qty: n(o.amount),
+          filled: n(o["filled-amount"]),
+          time: n(o["created-at"]),
+        };
+      });
+    case "whitebit":
+      return (Array.isArray(json) ? json : []).map((o) => ({
+        id: String(o.orderId),
+        native: o.market,
+        side: String(o.side).toUpperCase(),
+        type: String(o.type).toUpperCase(),
+        price: n(o.price) || null,
+        qty: n(o.amount),
+        filled: n(o.dealStock),
+        time: Math.round(n(o.timestamp) * 1000),
+      }));
+    case "gate":
+      return (Array.isArray(json) ? json : []).flatMap((p) =>
+        (p.orders ?? []).map((o) => ({
+          id: String(o.id),
+          native: o.currency_pair,
+          side: String(o.side).toUpperCase(),
+          type: String(o.type).toUpperCase(),
+          price: n(o.price) || null,
+          qty: n(o.amount),
+          filled: Math.max(0, n(o.amount) - n(o.left)),
+          time: n(o.create_time_ms),
+        })),
+      );
+    case "hitbtc":
+      // HitBTC cancels by the client order id, so that is the id kept.
+      return (Array.isArray(json) ? json : []).map((o) => ({
+        id: String(o.client_order_id),
+        native: o.symbol,
+        side: String(o.side).toUpperCase(),
+        type: String(o.type).toUpperCase(),
+        price: n(o.price) || null,
+        qty: n(o.quantity),
+        filled: n(o.quantity_cumulative),
+        time: Date.parse(o.created_at) || 0,
+      }));
+    case "poloniex":
+      return (Array.isArray(json) ? json : []).map((o) => ({
+        id: String(o.id),
+        native: o.symbol,
+        side: String(o.side).toUpperCase(),
+        type: String(o.type).toUpperCase(),
+        price: n(o.price) || null,
+        qty: n(o.quantity),
+        filled: n(o.filledQuantity),
+        time: n(o.createTime),
+      }));
   }
   return [];
 }
@@ -462,8 +752,11 @@ export function parseOrderResult(ex, json) {
   return { id: "", status: "SENT" };
 }
 
-/** Coinbase batch_cancel answers 200 even when the cancel failed. */
+/** Coinbase batch_cancel and Poloniex answer 200 even when the cancel failed. */
 export function cancelError(ex, json) {
+  if (ex === "poloniex") {
+    return json?.code !== undefined && Number(json.code) !== 200 ? `${json.message || "Poloniex could not cancel the order"} (${json.code})` : null;
+  }
   if (ex !== "coinbase") return null;
   const r = json?.results?.[0];
   return r && r.success === false ? r.failure_reason || "Coinbase could not cancel the order" : null;

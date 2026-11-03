@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createFx } from "./fx.js";
 import { createGecko } from "./gecko.js";
-import { DATA_SOURCES, EXCHANGES, isExternalUrl, normalizeSettings, pageUrl, resolveWebPath } from "./lib.js";
+import { DATA_SOURCES, EXCHANGES, KEY_EXCHANGES, isExternalUrl, normalizeSettings, pageUrl, resolveWebPath } from "./lib.js";
 import { createOanda } from "./oanda.js";
 import { createTrade } from "./trade.js";
 import { createWeb } from "./web.js";
@@ -371,7 +371,7 @@ function registerIpc() {
   });
   terminal("trade:open-keys", (venue) => {
     if (venue === "oanda") openTokenWindow();
-    else openKeysWindow(Object.hasOwn(EXCHANGES, venue) ? venue : "binance");
+    else openKeysWindow(Object.hasOwn(KEY_EXCHANGES, venue) ? venue : "binance");
   });
   terminal("app:open-window", (view) => void openDashboard(view));
   terminal("app:open-chart", (symbol) => {

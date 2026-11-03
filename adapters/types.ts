@@ -27,13 +27,35 @@ export interface OandaPrice {
 }
 
 /** Where a real order goes: one of the six exchanges, or OANDA for forex and metals. */
-export type VenueId = "binance" | "okx" | "bybit" | "kucoin" | "coinbase" | "mexc" | "oanda";
+/** Exchanges with live prices and trading. */
+export type TradingVenueId = "binance" | "okx" | "bybit" | "kucoin" | "coinbase" | "mexc";
+/** Exchanges read through an API key for the portfolio only (no price feed or order ticket). */
+export type AccountVenueId = "htx" | "whitebit" | "gate" | "hitbtc" | "poloniex";
+export type VenueId = TradingVenueId | AccountVenueId | "oanda";
+
+/** Every venue with a key or token, in the portfolio's order. */
+export const KEYED_VENUES: VenueId[] = [
+  "binance",
+  "okx",
+  "bybit",
+  "kucoin",
+  "coinbase",
+  "mexc",
+  "htx",
+  "whitebit",
+  "gate",
+  "hitbtc",
+  "poloniex",
+  "oanda",
+];
 
 export interface VenueStatus {
   configured: boolean;
   label: string;
   /** The saved key is a test-network / demo key (or an OANDA practice token). */
   testnet: boolean;
+  /** Orders can be placed from the chart (false: portfolio only). OANDA leaves it out. */
+  trading?: boolean;
 }
 
 /** One asset held on a venue. */

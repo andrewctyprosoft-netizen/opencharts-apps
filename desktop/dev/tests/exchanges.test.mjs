@@ -2,10 +2,15 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { test } from "node:test";
 import {
+  accountBalanceRequest,
   apiError,
+  balancesRequest,
   cancelError,
+  cancelRequest,
   clientOrderId,
   coinbaseJwt,
+  htxSpotAccount,
+  openOrdersRequest,
   orderRequest,
   parseBalances,
   parseOpenOrders,
@@ -132,4 +137,76 @@ test("parseBalances and parseOpenOrders normalise replies", () => {
   assert.equal(parseOpenOrders("okx", { data: [{ ordId: "1", instId: "BTC-USDT", side: "sell", ordType: "limit", px: "90000", sz: "1", accFillSz: "0.2", cTime: "5" }] })[0].side, "SELL");
   assert.deepEqual(parseOrderResult("binance", { orderId: 42, status: "FILLED" }), { id: "42", status: "FILLED" });
   assert.match(clientOrderId(), /^oc[0-9a-f]{22}$/);
+});
+
+test("HTX: signature v2 over the sorted, encoded query with the host", () => {
+  const { url, init } = signRequest("htx", { apiKey: "ak", secret: "sk" }, { method: "GET", path: "/v1/order/openOrders", query: { size: 500 } }, Date.UTC(2026, 10, 3, 1, 2, 3, 456));
+  const q = "AccessKeyId=ak&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=2026-11-03T01%3A02%3A03&size=500";
+  const sig = hmac("sk", `GET\napi.huobi.pro\n/v1/order/openOrders\n${q}`, "base64");
+  assert.equal(url, `https://api.huobi.pro/v1/order/openOrders?${q}&Signature=${encodeURIComponent(sig)}`);
+  assert.equal(init.body, undefined);
+  assert.equal(htxSpotAccount({ data: [{ id: 1, type: "margin" }, { id: 7, type: "spot", state: "working" }] }), "7");
+  assert.equal(accountBalanceRequest("7").path, "/v1/account/accounts/7/balance");
+});
+
+test("WhiteBIT: base64 payload of the body, HMAC-SHA512 hex", () => {
+  const { url, init } = signRequest("whitebit", { apiKey: "wk", secret: "ws" }, balancesRequest("whitebit"), NOW);
+  assert.equal(url, "https://whitebit.com/api/v4/trade-account/balance");
+  assert.equal(init.method, "POST");
+  assert.deepEqual(JSON.parse(init.body), { request: "/api/v4/trade-account/balance", nonce: String(NOW), nonceWindow: true });
+  assert.equal(init.headers["X-TXC-PAYLOAD"], Buffer.from(init.body).toString("base64"));
+  assert.equal(init.headers["X-TXC-SIGNATURE"], crypto.createHmac("sha512", "ws").update(init.headers["X-TXC-PAYLOAD"]).digest("hex"));
+  assert.deepEqual(JSON.parse(signRequest("whitebit", { apiKey: "k", secret: "s" }, cancelRequest("whitebit", "BTC_USDT", "42"), NOW).init.body).orderId, 42);
+});
+
+test("Gate: HMAC-SHA512 of method, path, query, body hash and seconds", () => {
+  const req = cancelRequest("gate", "BTC_USDT", "123");
+  const { url, init } = signRequest("gate", { apiKey: "gk", secret: "gs" }, req, NOW);
+  assert.equal(url, "https://api.gateio.ws/api/v4/spot/orders/123?currency_pair=BTC_USDT");
+  const empty = crypto.createHash("sha512").update("").digest("hex");
+  assert.ok(empty.startsWith("cf83e135"));
+  const ts = String(NOW / 1000);
+  assert.equal(init.headers.Timestamp, ts);
+  assert.equal(init.headers.SIGN, crypto.createHmac("sha512", "gs").update(`DELETE\n/api/v4/spot/orders/123\ncurrency_pair=BTC_USDT\n${empty}\n${ts}`).digest("hex"));
+});
+
+test("HitBTC uses basic auth; Poloniex signs sorted params or the request body", () => {
+  const h = signRequest("hitbtc", { apiKey: "hk", secret: "hs" }, balancesRequest("hitbtc"), NOW);
+  assert.equal(h.init.headers.Authorization, `Basic ${Buffer.from("hk:hs").toString("base64")}`);
+  const g = signRequest("poloniex", { apiKey: "pk", secret: "ps" }, openOrdersRequest("poloniex"), NOW);
+  assert.equal(g.url, "https://api.poloniex.com/orders?limit=2000");
+  assert.equal(g.init.headers.signature, hmac("ps", `GET\n/orders\nlimit=2000&signTimestamp=${NOW}`, "base64"));
+  const d = signRequest("poloniex", { apiKey: "pk", secret: "ps" }, cancelRequest("poloniex", "BTC_USDT", "9"), NOW);
+  assert.equal(d.init.headers.signature, hmac("ps", `DELETE\n/orders/9\nsignTimestamp=${NOW}`, "base64"));
+  assert.equal(cancelError("poloniex", { orderId: "9", state: "PENDING_CANCEL", code: 200 }), null);
+  assert.equal(cancelError("poloniex", { code: 21359, message: "Order was already canceled or filled." }), "Order was already canceled or filled. (21359)");
+});
+
+test("portfolio-only exchanges: errors, balances and open orders", () => {
+  assert.equal(apiError("htx", 200, { status: "error", "err-code": "api-signature-not-valid", "err-msg": "Signature not valid" }), "Signature not valid (api-signature-not-valid)");
+  assert.equal(apiError("htx", 200, { status: "ok", data: [] }), null);
+  assert.equal(apiError("htx", 200, { status: "error", "err-code": "api-signature-not-valid", "err-msg": "Signature not valid: Incorrect Access key [Access key错误]" }), "Signature not valid: Incorrect Access key (api-signature-not-valid)");
+  assert.equal(apiError("gate", 401, { label: "INVALID_KEY", message: "Invalid key provided" }), "Invalid key provided (INVALID_KEY)");
+  assert.equal(apiError("whitebit", 422, { code: 30, message: "Validation failed", errors: { market: ["Market is not valid"] } }), "Validation failed Market is not valid (30)");
+  assert.equal(apiError("whitebit", 200, { BTC: { available: "1", freeze: "0" } }), null);
+  assert.equal(apiError("hitbtc", 401, { error: { code: 1002, message: "Authorization is required or has been failed" } }), "Authorization is required or has been failed (1002)");
+  assert.equal(apiError("poloniex", 400, { code: 400, message: "Invalid Apikey or Signature" }), "Invalid Apikey or Signature (400)");
+  assert.equal(apiError("poloniex", 200, [{ accountType: "SPOT", balances: [] }]), null);
+
+  assert.deepEqual(
+    parseBalances("htx", { data: { list: [{ currency: "usdt", type: "trade", balance: "10" }, { currency: "usdt", type: "frozen", balance: "2" }, { currency: "btc", type: "loan", balance: "-1" }] } }),
+    [{ asset: "USDT", free: 10, locked: 2 }],
+  );
+  assert.deepEqual(parseBalances("whitebit", { BTC: { available: "0.5", freeze: "0.1" }, ETH: { available: "0", freeze: "0" } }), [{ asset: "BTC", free: 0.5, locked: 0.1 }]);
+  assert.deepEqual(parseBalances("gate", [{ currency: "GT", available: "3", locked: "1" }]), [{ asset: "GT", free: 3, locked: 1 }]);
+  assert.deepEqual(parseBalances("hitbtc", [{ currency: "ETH", available: "2", reserved: "0.5" }]), [{ asset: "ETH", free: 2, locked: 0.5 }]);
+  assert.deepEqual(parseBalances("poloniex", [{ accountType: "SPOT", balances: [{ currency: "TRX", available: "100", hold: "5" }] }]), [{ asset: "TRX", free: 100, locked: 5 }]);
+
+  const [htx] = parseOpenOrders("htx", { data: [{ id: 5, symbol: "btcusdt", type: "sell-limit-maker", price: "90000", amount: "0.1", "filled-amount": "0.02", "created-at": 7 }] });
+  assert.deepEqual(htx, { id: "5", native: "BTCUSDT", side: "SELL", type: "LIMIT-MAKER", price: 90000, qty: 0.1, filled: 0.02, time: 7 });
+  const [gate] = parseOpenOrders("gate", [{ currency_pair: "BTC_USDT", orders: [{ id: "1", currency_pair: "BTC_USDT", side: "buy", type: "limit", amount: "1", left: "0.25", price: "50000", create_time_ms: "8" }] }]);
+  assert.deepEqual([gate.native, gate.filled, gate.time], ["BTC_USDT", 0.75, 8]);
+  assert.equal(parseOpenOrders("whitebit", [{ orderId: 3, market: "ETH_USDT", side: "sell", type: "limit", price: "4000", amount: "1", dealStock: "0", timestamp: 1595792396.165973 }])[0].time, 1595792396166);
+  assert.equal(parseOpenOrders("hitbtc", [{ id: 1, client_order_id: "abc123", symbol: "ETHBTC", side: "sell", type: "limit", quantity: "1", quantity_cumulative: "0", price: "0.05", created_at: "2026-11-01T00:00:00Z" }])[0].id, "abc123");
+  assert.equal(parseOpenOrders("poloniex", [{ id: "77", symbol: "BTC_USDT", side: "BUY", type: "LIMIT", price: "1", quantity: "2", filledQuantity: "1", createTime: 9 }])[0].filled, 1);
 });

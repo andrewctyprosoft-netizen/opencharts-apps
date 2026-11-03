@@ -15,6 +15,7 @@ import type {
   VenueOrder,
   VenueStatus,
 } from "../../../adapters/types.ts";
+import { KEYED_VENUES } from "../../../adapters/types.ts";
 import {
   EVM_CHAINS,
   type WalletHolding,
@@ -43,15 +44,7 @@ import { isMobileApp } from "../mobile/is-mobile.ts";
  * on-chain wallets read by address (EVM chains, Solana, Bitcoin), valued in USD.
  */
 
-const VENUES: VenueId[] = [
-  "binance",
-  "okx",
-  "bybit",
-  "kucoin",
-  "coinbase",
-  "mexc",
-  "oanda",
-];
+const VENUES: VenueId[] = KEYED_VENUES;
 const WALLETS_KEY = "ocd_wallets";
 const AUTO_REFRESH_MS = 60_000;
 const PALETTE = [

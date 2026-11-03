@@ -133,3 +133,14 @@ test("parseBalances and parseOpenOrders normalise replies", () => {
   assert.deepEqual(parseOrderResult("binance", { orderId: 42, status: "FILLED" }), { id: "42", status: "FILLED" });
   assert.match(clientOrderId(), /^oc[0-9a-f]{22}$/);
 });
+
+test("portfolio-only exchanges sign the same through the Android shim (SHA-512 included)", async () => {
+  const node = await import("../../../desktop/electron/exchanges.js");
+  const shim = await import("../out/exchanges.bridge.mjs");
+  const creds = { apiKey: "key", secret: "secret" };
+  for (const ex of ["htx", "whitebit", "gate", "hitbtc", "poloniex"]) {
+    for (const req of [node.balancesRequest(ex), node.openOrdersRequest(ex), node.cancelRequest(ex, "BTC_USDT", "42")]) {
+      assert.deepEqual(shim.signRequest(ex, creds, req, NOW), node.signRequest(ex, creds, req, NOW), `${ex} ${req.method} ${req.path}`);
+    }
+  }
+});

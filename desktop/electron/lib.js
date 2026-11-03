@@ -16,6 +16,18 @@ export const EXCHANGES = {
   mexc: { label: "MEXC", passphrase: false },
 };
 
+/** Exchanges read through an API key only: balances and open orders in the portfolio, no price feed. */
+export const ACCOUNT_EXCHANGES = {
+  htx: { label: "HTX (Huobi)", passphrase: false },
+  whitebit: { label: "WhiteBIT", passphrase: false },
+  gate: { label: "Gate.io", passphrase: false },
+  hitbtc: { label: "HitBTC", passphrase: false },
+  poloniex: { label: "Poloniex", passphrase: false },
+};
+
+/** Every exchange that takes an API key, in the keys window's order. */
+export const KEY_EXCHANGES = { ...EXCHANGES, ...ACCOUNT_EXCHANGES };
+
 export const DEFAULT_SETTINGS = {
   dataSource: "live",
   bounds: { width: 1440, height: 900 },
@@ -62,7 +74,7 @@ export function normalizeSettings(raw) {
     }
   }
   if (raw.keys && typeof raw.keys === "object") {
-    for (const id of Object.keys(EXCHANGES)) {
+    for (const id of Object.keys(KEY_EXCHANGES)) {
       if (typeof raw.keys[id] === "string" && raw.keys[id]) out.keys[id] = raw.keys[id];
     }
   }

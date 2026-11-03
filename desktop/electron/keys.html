@@ -37,7 +37,7 @@
       <h1 id="title"></h1>
       <p id="intro"></p>
       <ol id="steps"></ol>
-      <div class="warn">Turn on <b>read</b> and <b>spot trading</b> only. Never enable withdrawals. Keys are checked with the exchange, then stored encrypted on this PC (Windows DPAPI) and never shown again.</div>
+      <div class="warn"><span id="perm"></span> Never enable withdrawals. Keys are checked with the exchange, then stored encrypted on this PC (Windows DPAPI) and never shown again.</div>
       <div id="form">
         <label for="apiKey" id="apiKeyLabel">API key</label>
         <input id="apiKey" type="text" autocomplete="off" spellcheck="false" />
@@ -94,6 +94,26 @@
           label: "MEXC", url: "https://www.mexc.com/user/openapi",
           steps: ["Open API Management in your MEXC account.", "Create a key with Spot › View Account Details and Trade.", "Paste the access key and secret key."],
         },
+        htx: {
+          label: "HTX (Huobi)", url: "https://www.htx.com/", portfolio: true,
+          steps: ["Open API Management in your HTX account.", "Create an API key with the Read permission (add Trade to cancel orders from the portfolio).", "Paste the access key and secret key."],
+        },
+        whitebit: {
+          label: "WhiteBIT", url: "https://whitebit.com/", portfolio: true,
+          steps: ["Open Account › API in your WhiteBIT account.", "Create a key for Trade API (v4) and activate it; allow all endpoints, or at least the trading balance and order endpoints.", "Paste the public key and secret key."],
+        },
+        gate: {
+          label: "Gate.io", url: "https://www.gate.com/", portfolio: true,
+          steps: ["Open API Management in your Gate account.", "Create an APIv4 key for the classic account with Spot trade set to Read Only (Read and Write to cancel orders from the portfolio).", "Paste the key and secret."],
+        },
+        hitbtc: {
+          label: "HitBTC", url: "https://hitbtc.com/", portfolio: true,
+          steps: ["Open Settings › API keys in your HitBTC account.", "Create a key and tick Orderbook, History, Trading balance (add Place/cancel orders to cancel from the portfolio).", "Paste the API key and secret key."],
+        },
+        poloniex: {
+          label: "Poloniex", url: "https://www.poloniex.com/", portfolio: true,
+          steps: ["Open API Keys in your Poloniex account settings.", "Create a key with Read permission (add Trade to cancel orders from the portfolio).", "Paste the API key and secret."],
+        },
         oanda: {
           label: "OANDA", url: "https://www.oanda.com/", oanda: true,
           steps: ["Forex and metals (XAUUSD, EURUSD …) trade on OANDA.", "OANDA uses one API token instead of a key and secret.", "The token window checks it with OANDA and stores it encrypted."],
@@ -120,7 +140,11 @@
         const v = VENUES[current];
         renderTabs();
         $("title").textContent = `${v.label} API ${v.oanda ? "token" : "key"}`;
-        $("intro").innerHTML = `Orders on ${v.label} pairs go to your ${v.label} account once this is set. Create it at <a href="${v.url}" target="_blank">${new URL(v.url).hostname}</a>.`;
+        const link = `<a href="${v.url}" target="_blank">${new URL(v.url).hostname}</a>`;
+        $("intro").innerHTML = v.portfolio
+          ? `Shows your ${v.label} balances and open orders in the portfolio (no charts or order ticket for ${v.label}). Create the key at ${link}.`
+          : `Orders on ${v.label} pairs go to your ${v.label} account once this is set. Create it at ${link}.`;
+        $("perm").innerHTML = v.portfolio ? "Turn on <b>read</b> only (trade only to cancel orders here)." : "Turn on <b>read</b> and <b>spot trading</b> only.";
         $("steps").innerHTML = v.steps.map((s) => `<li>${s}</li>`).join("");
         $("form").classList.toggle("hidden", Boolean(v.oanda));
         $("oandaForm").classList.toggle("hidden", !v.oanda);
@@ -156,7 +180,9 @@
           configured[current] = true;
           renderTabs();
           for (const id of ["apiKey", "secret", "secretArea", "passphrase"]) $(id).value = "";
-          status(`Saved. ${v.label} answered with ${r.assets} asset${r.assets === 1 ? "" : "s"} on the account. Orders on ${v.label} pairs now go to this account.`, "ok");
+          const net = r.switched ? ` This is a ${r.testnet ? "test network" : "live"} key, so it was saved as one.` : "";
+          const use = v.portfolio ? "Its balances and open orders now show in the portfolio." : `Orders on ${v.label} pairs now go to this account.`;
+          status(`Saved. ${v.label} answered with ${r.assets} asset${r.assets === 1 ? "" : "s"} on the account.${net} ${use}`, "ok");
         } else {
           status(r.error, "err");
         }

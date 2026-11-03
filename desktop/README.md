@@ -74,6 +74,9 @@ Shortcuts: Alt + T trendline, Alt + H horizontal line, Alt + J horizontal ray, A
 4. Place orders as usual (order panel, one-click, watchlist). Each real order shows a confirmation first; cancel there and nothing is sent.
 
 Binance (testnet.binance.vision), OKX (demo trading) and Bybit (testnet) keys can be marked as test keys: orders then go to the test account and the confirmation says so.
+If the exchange refuses the key, the keys page lists the usual causes and the public IPv4 address the exchange sees (read from api.ipify.org only at that moment), for keys with an IP restriction.
+A Binance testnet key saved without the test box ticked, or the other way round, is found on the other network and saved as such (OKX and Bybit too).
+Binance keys are checked for shape first: a system-generated key and secret are 64 letters and digits, so a key cut short in pasting is caught before Binance is asked.
 Real orders are market or limit spot orders. Quantities are coins (the order panel shows **Quantity (BTC)**), rounded down to the pair's lot step and checked against its minimum.
 Take profit and stop loss are sent with OANDA orders only; stop orders stay paper.
 Real fills do not appear in the terminal's positions table: see **File › Dashboard › Portfolio** for balances and open orders.
@@ -90,6 +93,13 @@ Alerts work on any listed symbol and survive restarts. They are checked while th
 
 **File › Dashboard › Alerts & positions** (Ctrl+Shift+A) opens a central window: summary cards, the full alert list, open positions (paper account and OANDA trades, each with **Close**), open orders on the paper account, every exchange with a key and OANDA (each with **Cancel**), and exchange holdings.
 The paper account and alert checks run in the main window; the dashboard says so if that window is not running.
+
+### Portfolio-Only Exchanges
+
+**HTX (Huobi), WhiteBIT, Gate.io, HitBTC and Poloniex** take an API key in the same window for the portfolio only: balances, open orders and **Cancel**.
+They have no price feed or order ticket in OpenCharts; place orders on the exchange's own site.
+A **read** key is enough; cancelling needs trade permission.
+BitMEX is not offered: it closed its exchange on 23 September 2026.
 
 ### Portfolio
 
@@ -137,7 +147,7 @@ It stays in the app's main process; the chart page never sees it.
 | `dist/OpenCharts-<version>-portable.exe` | The app to run (built, not committed) |
 | `electron/main.js` | Desktop shell: window, menus, `app://` file server, IPC bridges, token window, smoke mode |
 | `electron/web.js` | Public requests for the page (exchange market data, overview, wallets), limited to an allowlist of hosts, paced per host |
-| `electron/exchanges.js` | Request signing, order bodies and reply parsing for the six exchanges |
+| `electron/exchanges.js` | Request signing, order bodies and reply parsing for the six trading exchanges and the five portfolio-only ones; key checks |
 | `electron/trade.js` | Exchange keys (DPAPI), balances, open orders, place and cancel; OANDA orders via `oanda.js` |
 | `electron/keys.html` | The exchange API keys window |
 | `electron/fx.js` | Keyless forex and metals: Swissquote quotes and a paced Yahoo Finance chart queue |
@@ -213,6 +223,7 @@ The Android app's phone layout (`OpenCharts Mobile patch`) lives in the same tre
 - Alerts are checked only while the app runs (alerts on symbols that are not charted see a new price every 15–30 s); there is no email or phone delivery yet. Alerts on a symbol whose exchange is switched off never fire.
 - **Real orders were tested up to the exchanges' key checks**, not with funded keys: signing matches Binance's published example and verifies locally for Coinbase; every exchange answered a signed request with a made-up key by rejecting the key (not the request format). Try a test-network key (Binance, OKX demo, Bybit) or a tiny order first.
 - Real orders: market and limit spot only; no stop orders, and take profit / stop loss only on OANDA. Real fills are not in the terminal's positions table.
+- The portfolio-only exchanges (HTX, WhiteBIT, Gate.io, HitBTC, Poloniex) were tested up to their key checks with made-up keys, like the others. Gate.io lists up to 100 open orders per pair, WhiteBIT and Poloniex the newest 100 and 2,000, HTX 500.
 - MEXC lists open orders per pair, so the portfolio shows MEXC orders only for assets with funds on hold against USDT.
 - Wallets: EVM chains show the native coin and main stablecoins and wrapped coins (every priced Ethereum token through Ethplorer's free key; thinly traded ones are hidden as likely spam); other tokens on BNB Chain, Base and the rest are not discovered.
 - The overview uses free public APIs (CoinGecko, Yahoo Finance, exchange tickers) that can throttle; custom and week/month changes load daily history for the top 200 rows of the current view. Stocks are Yahoo's US-listed largest companies (with ADRs such as TSM).

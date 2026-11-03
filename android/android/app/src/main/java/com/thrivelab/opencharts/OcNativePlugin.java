@@ -84,6 +84,14 @@ public class OcNativePlugin extends Plugin {
             "api.exchange.coinbase.com",
             "api.coinbase.com",
             "api.mexc.com",
+            // Exchanges read for the portfolio only
+            "api.huobi.pro",
+            "whitebit.com",
+            "api.gateio.ws",
+            "api.hitbtc.com",
+            "api.poloniex.com",
+            // This device's public IPv4 address, shown when an exchange refuses a key
+            "api.ipify.org",
             // DEX pools, forex and metals, the market overview, wallets
             "api.geckoterminal.com",
             "forex-data-feed.swissquote.com",

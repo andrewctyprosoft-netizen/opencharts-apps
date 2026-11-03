@@ -14,7 +14,7 @@ import {
   clientOrderId,
   htxSpotAccount,
   keyFormatError,
-  keyRejected,
+  keyRejection,
   openOrdersRequest,
   orderRequest,
   parseBalances,
@@ -70,7 +70,7 @@ export function createTrade({ net, safeStorage, getSettings, saveSettings, oanda
       // Not JSON (an HTML error page); the status says enough.
     }
     const error = apiError(ex, res.status, json);
-    if (error) throw Object.assign(new Error(`${label(ex)}: ${error}`), { keyRejected: keyRejected(ex, res.status, json) });
+    if (error) throw Object.assign(new Error(`${label(ex)}: ${error}`), { rejection: keyRejection(ex, res.status, json) });
     return json;
   }
 
@@ -116,15 +116,13 @@ export function createTrade({ net, safeStorage, getSettings, saveSettings, oanda
     try {
       assets = await read(creds);
     } catch (err) {
-      const other = HAS_TESTNET.has(ex) && err.keyRejected ? { ...creds, testnet: !creds.testnet } : null;
+      const other = HAS_TESTNET.has(ex) && err.rejection === "key" ? { ...creds, testnet: !creds.testnet } : null;
       if (other) assets = await read(other).then((a) => ((creds = other), a), () => undefined);
       if (!assets) {
         const message = String(err.message || err);
-        if (!err.keyRejected) return { ok: false, error: message };
-        return { ok: false, error: `${message}
-
-Common causes:
-${rejectedKeyHint(ex, label(ex), await publicIp())}` };
+        if (!err.rejection) return { ok: false, error: message };
+        const ip = err.rejection === "key" ? await publicIp() : null;
+        return { ok: false, error: `${message}\n\nCommon causes:\n${rejectedKeyHint(ex, label(ex), ip, err.rejection)}` };
       }
     }
     const settings = getSettings();

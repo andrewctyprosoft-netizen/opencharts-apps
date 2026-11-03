@@ -421,7 +421,7 @@ export function apiError(ex, status, json) {
       return null;
     case "htx":
       // The message may end in a Chinese copy in brackets: "Incorrect Access key [Access key错误]".
-      if (json?.status === "error") return `${String(json["err-msg"] || "HTX error").replace(/\s*\[[^\]]*[^ -][^\]]*\]/g, "")} (${json["err-code"]})`;
+      if (json?.status === "error") return `${String(json["err-msg"] || "HTX error").replace(/\s*\[[^\]]*[^\x00-\x7F][^\]]*\]/g, "")} (${json["err-code"]})`;
       if (json && json.code !== undefined && json.code !== 200) return `${json.message || "HTX error"} (${json.code})`;
       return fallback;
     case "whitebit":
@@ -473,32 +473,45 @@ export function keyFormatError(ex, apiKey, secret) {
   return null;
 }
 
+/** Exchanges that answer a wrong secret (bad signature) with its own error, apart from a refused key. */
+const SIGNATURE_ERRORS = new Set(["binance", "mexc", "okx", "bybit", "gate"]);
+
 /**
- * Whether a failed reply means the exchange refused the key itself (unknown key, wrong network,
- * IP not allowed, missing permission), as opposed to a bad request or an outage.
+ * Why a failed reply refused the credentials: "secret" when the exchange accepted the key but
+ * not its signature, "key" when it refused the key itself (unknown key, wrong network, IP not
+ * allowed, missing permission; on HTX, HitBTC, Poloniex and WhiteBIT possibly the secret too),
+ * or null for a bad request or an outage.
  * @param {string} ex
  * @param {number} status
  * @param {any} json
+ * @returns {"key" | "secret" | null}
  */
-export function keyRejected(ex, status, json) {
+export function keyRejection(ex, status, json) {
+  const pick = (secret, key) => (secret ? "secret" : key ? "key" : null);
   switch (ex) {
     case "binance":
-    case "mexc":
-      return [-1022, -2008, -2014, -2015, 10072, 700002, 700006, 700007].includes(Number(json?.code));
-    case "okx":
-      return ["50110", "50111", "50113", "50119", "50120", "50121"].includes(String(json?.code));
-    case "bybit":
-      return [10003, 10004, 10005, 10010, 33004].includes(Number(json?.retCode));
-    case "htx":
-      return /^(api-signature-not-valid|invalid-access-key|api-not-support-temp-addr|forbidden-trade-for-ip|api-key-not-found|login-required)/.test(String(json?.["err-code"] ?? ""));
+    case "mexc": {
+      const code = Number(json?.code);
+      return pick([-1022, 700002].includes(code), [-2008, -2014, -2015, 10072, 700006, 700007].includes(code));
+    }
+    case "okx": {
+      const code = String(json?.code);
+      return pick(code === "50113", ["50110", "50111", "50119", "50120", "50121"].includes(code));
+    }
+    case "bybit": {
+      const code = Number(json?.retCode);
+      return pick(code === 10004, [10003, 10005, 10010, 33004].includes(code));
+    }
     case "gate":
-      return ["INVALID_KEY", "INVALID_SIGNATURE", "FORBIDDEN", "IP_FORBIDDEN", "READ_ONLY"].includes(json?.label) || status === 401;
+      return pick(json?.label === "INVALID_SIGNATURE", ["INVALID_KEY", "FORBIDDEN", "IP_FORBIDDEN", "READ_ONLY"].includes(json?.label) || status === 401);
+    case "htx":
+      return pick(false, /^(api-signature-not-valid|invalid-access-key|api-not-support-temp-addr|forbidden-trade-for-ip|api-key-not-found|login-required)/.test(String(json?.["err-code"] ?? "")));
     case "hitbtc":
-      return [1001, 1002, 1003, 1004].includes(Number(json?.error?.code)) || status === 401;
+      return pick(false, [1001, 1002, 1003, 1004].includes(Number(json?.error?.code)) || status === 401);
     case "poloniex":
-      return status === 401 || /api ?key|signature/i.test(String(json?.message ?? ""));
+      return pick(false, status === 401 || /api ?key|signature/i.test(String(json?.message ?? "")));
   }
-  return status === 401 || status === 403;
+  return pick(false, status === 401 || status === 403);
 }
 
 /**
@@ -506,16 +519,25 @@ export function keyRejected(ex, status, json) {
  * @param {string} ex
  * @param {string} label
  * @param {string | null} ip public IPv4 address of this device, when it could be read
+ * @param {"key" | "secret"} [cause] from keyRejection
  */
-export function rejectedKeyHint(ex, label, ip) {
-  const where = ip ? `${label} sees this device as ${ip}.` : "";
+export function rejectedKeyHint(ex, label, ip, cause = "key") {
+  if (cause === "secret") {
+    return [
+      `• ${label} accepted the key but not the secret: the secret belongs to another key, or was not copied in full.`,
+      "• Exchanges show a secret only once, when the key is created. If it is lost, delete the key and create a new one.",
+    ].join("\n");
+  }
+  const where = ip ? ` ${label} sees this device as ${ip}.` : "";
   const lines = [
-    `• The key has an IP restriction that does not include this device. ${where} On a phone the address changes between Wi-Fi and mobile data: add each address, or set the key to Unrestricted (read and spot trading only, never withdrawals).`.trim(),
-    "• The key was deleted, or the key or secret was not copied in full (the secret must belong to this key).",
+    `• The key has an IP restriction that does not include this device.${where} The address can change (a router restart, a phone moving between Wi-Fi and mobile data): add each address, or set the key to Unrestricted (read and spot trading only, never withdrawals).`,
+    SIGNATURE_ERRORS.has(ex)
+      ? `• The key was deleted, or not copied in full. (The secret is not checked yet: ${label} reports a wrong secret with a different error.)`
+      : "• The key was deleted, or the key or secret was not copied in full.",
   ];
   if (ex === "binance") {
     lines.push("• The key comes from another Binance site (Binance US, TR, Japan…) or from Demo Trading: OpenCharts uses www.binance.com keys, or Spot test network keys with the box ticked.");
-    lines.push("• Enable Reading is off in the key's restrictions.");
+    lines.push("• Enable Reading is off, or a change to the key's restrictions was not saved: Binance applies it only after Save and its security check.");
   } else {
     lines.push("• The key is missing the read permission.");
   }

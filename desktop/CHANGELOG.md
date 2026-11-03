@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Refused-key hint, clearer.** A wrong secret (Binance -1022, OKX 50113, Bybit 10004, MEXC 700002, Gate.io INVALID_SIGNATURE) now gets its own short hint ("accepted the key but not the secret"), without the IP address or a test-network retry. For a refused key such as Binance -2015, the hint no longer suggests the secret on exchanges that report a wrong secret separately, says the address can change after a router restart as well as on a phone, and adds that Binance applies a change to a key's restrictions only after Save and its security check.
+- Fixed: a regular expression in the HTX error cleanup was saved with raw control bytes, which made git and grep treat `electron/exchanges.js` as a binary file.
+
 ## 0.6.3 — 2026-11-03
 
 - **Portfolio: HTX (Huobi), WhiteBIT, Gate.io, HitBTC and Poloniex.** Each takes an API key in **Data › Exchange API keys** and shows its balances and open orders (with **Cancel**) in the portfolio and the alerts & positions dashboard. They are portfolio-only: no price feed or order ticket. BitMEX is not added: it closed its exchange on 23 September 2026.

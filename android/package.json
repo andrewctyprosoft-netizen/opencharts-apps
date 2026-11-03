@@ -1,7 +1,7 @@
 {
   "name": "opencharts-android",
   "productName": "OpenCharts",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Android trading-chart app: live crypto from Binance, OKX, Bybit, KuCoin, Coinbase and MEXC, DEX pools on every chain, forex and spot gold, real trading through exchange API keys, price alerts with phone notifications, portfolio and market overview dashboards, 80+ TradingView-style drawing tools, indicators and paper trading (OpenCharts in Capacitor).",
   "license": "MIT",
   "private": true,

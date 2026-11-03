@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.3 — 2026-11-03
 
 - **Portfolio: HTX (Huobi), WhiteBIT, Gate.io, HitBTC and Poloniex.** Each takes an API key in **Data › Exchange API keys** and shows its balances and open orders (with **Cancel**) in the portfolio and the alerts & positions dashboard. They are portfolio-only: no price feed or order ticket. BitMEX is not added: it closed its exchange on 23 September 2026.
 - **Clearer answer when an exchange refuses a key** (Binance's "Invalid API-key, IP, or permissions for action (-2015)"): the keys window now lists the usual causes (IP restriction, key cut short or deleted, a key from another Binance site or Demo Trading, Enable Reading off) and shows the public IPv4 address the exchange sees, to add to the key's IP whitelist.

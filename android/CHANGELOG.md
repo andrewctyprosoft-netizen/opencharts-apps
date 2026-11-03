@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.3 — 2026-11-03
 
 - **Portfolio: HTX (Huobi), WhiteBIT, Gate.io, HitBTC and Poloniex** (from OpenCharts Desktop): API keys on the keys page, balances and open orders with cancel in the portfolio. Portfolio-only; BitMEX closed on 23 September 2026 and is not added.
 - **Fixed the dead end after Binance's "Invalid API-key, IP, or permissions for action (-2015)"**: the keys page now lists what to check and the phone's public IPv4 address as the exchange sees it (it changes between Wi-Fi and mobile data, so an IP-restricted key fails on the other network). A test-network key saved without the box ticked is found and saved as a test key. Binance keys are checked for their 64-character shape first; invisible characters pasted from chat apps are removed.

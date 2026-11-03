@@ -21,8 +21,8 @@ Get the latest build from [Releases](../../releases/latest):
 
 | App | File | Install |
 |:----|:-----|:--------|
-| Windows | `OpenCharts-0.6.2-portable.exe` | Run it; nothing to install. SmartScreen may warn on first run (More info › Run anyway): the exe is not code-signed. |
-| Android 7.0+ | `OpenCharts-0.6.2.apk` | Open it on the phone and allow installs from that app once. Not on Google Play; Play Protect may offer to scan it. |
+| Windows | `OpenCharts-0.6.3-portable.exe` | Run it; nothing to install. SmartScreen may warn on first run (More info › Run anyway): the exe is not code-signed. |
+| Android 7.0+ | `OpenCharts-0.6.3.apk` | Open it on the phone and allow installs from that app once. Not on Google Play; Play Protect may offer to scan it. |
 
 ## Features
 

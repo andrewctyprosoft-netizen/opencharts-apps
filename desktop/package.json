@@ -1,7 +1,7 @@
 {
   "name": "opencharts-desktop",
   "productName": "OpenCharts",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Windows desktop trading-chart app: live crypto from Binance, OKX, Bybit, KuCoin, Coinbase and MEXC, DEX pools on every chain, forex and spot gold, with real trading through exchange API keys, a portfolio and market overview dashboard, 80+ TradingView-style drawing tools, indicators and paper trading (OpenCharts in Electron).",
   "license": "MIT",
   "private": true,

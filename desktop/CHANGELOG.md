@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.4 — 2026-11-04
 
 - **Fixed: signed exchange and OANDA requests reached Electron's HTTP cache.** HTX puts the API access key in the request URL, so it was written to `%APPDATA%\OpenCharts\Cache`, along with cached account replies (balances, orders) from every exchange. All signed requests are now `cache: "no-store"` (checked: with it, a made-up HTX key no longer appears in a fresh profile's cache; without it, it lands in `Cache_Data/data_1`). Secrets were never in the cache or anywhere else outside the encrypted settings. Android was not affected (its native requests never used a cache).
 

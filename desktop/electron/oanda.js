@@ -43,6 +43,7 @@ export function createOanda({ net, safeStorage, getSettings, saveSettings, onPri
     if (!tok) throw new Error("No OANDA token set. Use Data › OANDA token… to add one.");
     const res = await net.fetch(base + path, {
       ...init,
+      cache: "no-store", // account ids in the path, account data in the replies
       headers: { Authorization: `Bearer ${tok}`, "Accept-Datetime-Format": "UNIX" },
     });
     if (!res.ok) {
@@ -208,6 +209,7 @@ export function createOanda({ net, safeStorage, getSettings, saveSettings, onPri
     if (!tok) throw new Error("No OANDA token. Add one in Data › OANDA token.");
     const res = await net.fetch(hosts().rest + path, {
       method,
+      cache: "no-store",
       headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json", "Accept-Datetime-Format": "UNIX" },
       ...(body && { body: JSON.stringify(body) }),
     });

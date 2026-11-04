@@ -13,6 +13,8 @@ function harness(answer) {
   const fetched = [];
   const net = {
     async fetch(url, init) {
+      // Signed requests must never reach the HTTP cache (HTX's access key is in the URL).
+      if (!url.startsWith("https://api.ipify.org")) assert.equal(init?.cache, "no-store", url);
       fetched.push(url);
       const [status, body] = answer(url, init);
       return new Response(JSON.stringify(body), { status });

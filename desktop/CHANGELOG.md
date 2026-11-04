@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: signed exchange and OANDA requests reached Electron's HTTP cache.** HTX puts the API access key in the request URL, so it was written to `%APPDATA%\OpenCharts\Cache`, along with cached account replies (balances, orders) from every exchange. All signed requests are now `cache: "no-store"` (checked: with it, a made-up HTX key no longer appears in a fresh profile's cache; without it, it lands in `Cache_Data/data_1`). Secrets were never in the cache or anywhere else outside the encrypted settings. Android was not affected (its native requests never used a cache).
+
 ## 0.6.3 — 2026-11-03
 
 - **Portfolio: HTX (Huobi), WhiteBIT, Gate.io, HitBTC and Poloniex.** Each takes an API key in **Data › Exchange API keys** and shows its balances and open orders (with **Cancel**) in the portfolio and the alerts & positions dashboard. They are portfolio-only: no price feed or order ticket. BitMEX is not added: it closed its exchange on 23 September 2026.

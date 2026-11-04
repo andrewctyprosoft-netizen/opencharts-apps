@@ -59,7 +59,8 @@ export function createTrade({ net, safeStorage, getSettings, saveSettings, oanda
     const { url, init } = signRequest(ex, c, req, Date.now());
     let res;
     try {
-      res = await net.fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+      // Never cached: HTX puts the access key in the URL, and replies hold balances and orders.
+      res = await net.fetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) });
     } catch (err) {
       throw new Error(`${label(ex)} unreachable: ${err.message || err}`);
     }
